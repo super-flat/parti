@@ -2,12 +2,26 @@ package fsm
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 
 	sm "github.com/lni/dragonboat/v3/statemachine"
 )
+
+const (
+	oneKey = "key"
+)
+
+type Query struct {
+	Key string
+}
+
+type Entry struct {
+	Key   string `json:"key"`
+	Value string `json:"val"`
+}
 
 // ExampleStateMachine is the IStateMachine implementation used in the
 // helloworld example.
@@ -17,6 +31,7 @@ type ExampleStateMachine struct {
 	ClusterID uint64
 	NodeID    uint64
 	Count     uint64
+	Payload   map[string]*Entry
 }
 
 // NewExampleStateMachine creates and return a new ExampleStateMachine object.
@@ -26,6 +41,7 @@ func NewExampleStateMachine(clusterID uint64,
 		ClusterID: clusterID,
 		NodeID:    nodeID,
 		Count:     0,
+		Payload:   make(map[string]*Entry),
 	}
 }
 
@@ -33,20 +49,22 @@ func NewExampleStateMachine(clusterID uint64,
 // we always return the Count value as a little endian binary encoded byte
 // slice.
 func (s *ExampleStateMachine) Lookup(query interface{}) (interface{}, error) {
-	result := make([]byte, 8)
-	binary.LittleEndian.PutUint64(result, s.Count)
-	return result, nil
+	result, ok := s.Payload[oneKey]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	output := *result
+	return output, nil
 }
 
 // Update updates the object using the specified committed raft entry.
 func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
-	// in this example, we print out the following hello world message for each
-	// incoming update request. we also increase the counter by one to remember
-	// how many updates we have applied
+	key := oneKey
+	value := string(data)
+	fmt.Printf("from ExampleStateMachine.Update(), msg: %s, count:%d\n", value, s.Count)
+	s.Payload[oneKey] = &Entry{Key: key, Value: value}
 	s.Count++
-	fmt.Printf("from ExampleStateMachine.Update(), msg: %s, count:%d\n",
-		string(data), s.Count)
-	return sm.Result{Value: uint64(len(data))}, nil
+	return sm.Result{Value: uint64(len(data)), Data: data}, nil
 }
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the
