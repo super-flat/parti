@@ -24,8 +24,8 @@ var (
 	// these are the initial member nodes of the Raft cluster.
 	addresses = []string{
 		"localhost:63001",
-		"localhost:63002",
-		"localhost:63003",
+		// "localhost:63002",
+		// "localhost:63003",
 	}
 )
 
@@ -100,7 +100,7 @@ func Run(cfg *Config) {
 	}
 
 	// make webserver
-	webServer := GetWebServer(nh)
+	webServer := GetWebServer(exampleClusterID, nh)
 	webServerAddr := fmt.Sprintf(":%s", cfg.WebPort)
 	webServer.Run(webServerAddr)
 }

@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,20 +11,24 @@ import (
 	"github.com/super-flat/raft-poc/app/fsm"
 )
 
-func GetWebServer(nodeHost *dragonboat.NodeHost) *gin.Engine {
-	w := &WebServer{nodeHost: nodeHost}
+func GetWebServer(clusterID uint64, nodeHost *dragonboat.NodeHost) *gin.Engine {
+	w := &WebServer{clusterID: clusterID, nodeHost: nodeHost}
 
 	r := gin.Default()
 
 	r.GET("/ping", w.handlePing)
+	// DB methods
 	r.GET("/db/:key", w.handleGet)
 	r.POST("/db/:key/:value", w.handleSet)
+	// Cluster methods
+	r.POST("/cluster/addnode/:node_id/:node_addr", w.handleAddNode)
 
 	return r
 }
 
 type WebServer struct {
-	nodeHost *dragonboat.NodeHost
+	clusterID uint64
+	nodeHost  *dragonboat.NodeHost
 }
 
 func (w *WebServer) handlePing(c *gin.Context) {
@@ -35,12 +39,11 @@ func (w *WebServer) handlePing(c *gin.Context) {
 
 func (w *WebServer) handleGet(c *gin.Context) {
 	key := c.Param("key")
-	fmt.Println("******* handle get")
 
 	query := fsm.Query{Key: key}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
-	res, err := w.nodeHost.SyncRead(ctx, exampleClusterID, query)
+	res, err := w.nodeHost.SyncRead(ctx, w.clusterID, query)
 	cancel()
 
 	if err != nil {
@@ -60,7 +63,7 @@ func (w *WebServer) handleGet(c *gin.Context) {
 func (w *WebServer) handleSet(c *gin.Context) {
 	key := c.Param("key")
 	value := c.Param("value")
-	cs := w.nodeHost.GetNoOPSession(exampleClusterID)
+	cs := w.nodeHost.GetNoOPSession(w.clusterID)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 	result, err := w.nodeHost.SyncPropose(ctx, cs, []byte(value))
 	cancel()
@@ -77,4 +80,32 @@ func (w *WebServer) handleSet(c *gin.Context) {
 		})
 	}
 
+}
+
+func (w *WebServer) handleAddNode(c *gin.Context) {
+	nodeID, _ := strconv.Atoi(c.Param("node_id"))
+	nodeAddress := c.Param("node_addr")
+	response, err := w.nodeHost.RequestAddNode(w.clusterID, uint64(nodeID), nodeAddress, 0, 3*time.Second)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"nodeID":      nodeID,
+			"nodeAddress": nodeAddress,
+			"error":       err.Error(),
+		})
+	} else {
+		outcome := <-response.AppliedC()
+
+		if outcome.Completed() {
+			c.JSON(200, gin.H{
+				"nodeID":      nodeID,
+				"nodeAddress": nodeAddress,
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"nodeID":      nodeID,
+				"nodeAddress": nodeAddress,
+			})
+		}
+	}
 }
