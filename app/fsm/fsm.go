@@ -2,8 +2,8 @@ package fsm
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	oneKey = "key"
+	ResultCodeFailure = iota
+	ResultCodeSuccess
 )
 
 type Query struct {
@@ -49,7 +50,12 @@ func NewExampleStateMachine(clusterID uint64,
 // we always return the Count value as a little endian binary encoded byte
 // slice.
 func (s *ExampleStateMachine) Lookup(query interface{}) (interface{}, error) {
-	result, ok := s.Payload[oneKey]
+	q, ok := query.(Query)
+	if !ok {
+		return nil, errors.New("query is not of type Query")
+	}
+
+	result, ok := s.Payload[q.Key]
 	if !ok {
 		return nil, errors.New("not found")
 	}
@@ -59,12 +65,21 @@ func (s *ExampleStateMachine) Lookup(query interface{}) (interface{}, error) {
 
 // Update updates the object using the specified committed raft entry.
 func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
-	key := oneKey
-	value := string(data)
-	fmt.Printf("from ExampleStateMachine.Update(), msg: %s, count:%d\n", value, s.Count)
-	s.Payload[oneKey] = &Entry{Key: key, Value: value}
+	var entry Entry
+	err := json.Unmarshal(data, &entry)
+
+	if err != nil {
+
+	}
+
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return sm.Result{Value: ResultCodeFailure, Data: nil}, err
+	}
+
+	s.Payload[entry.Key] = &Entry{Key: entry.Key, Value: entry.Value}
 	s.Count++
-	return sm.Result{Value: uint64(len(data)), Data: data}, nil
+
+	return sm.Result{Value: ResultCodeSuccess, Data: data}, nil
 }
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the

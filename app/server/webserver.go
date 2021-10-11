@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -63,9 +64,20 @@ func (w *WebServer) handleGet(c *gin.Context) {
 func (w *WebServer) handleSet(c *gin.Context) {
 	key := c.Param("key")
 	value := c.Param("value")
+
+	entry := &fsm.Entry{Key: key, Value: value}
+
+	entryBytes, err := json.Marshal(entry)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"key":   key,
+			"error": err.Error(),
+		})
+	}
+
 	cs := w.nodeHost.GetNoOPSession(w.clusterID)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
-	result, err := w.nodeHost.SyncPropose(ctx, cs, []byte(value))
+	result, err := w.nodeHost.SyncPropose(ctx, cs, entryBytes)
 	cancel()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
