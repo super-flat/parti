@@ -3,6 +3,9 @@ package server
 import "github.com/caarlos0/env/v6"
 
 type Config struct {
+	NodeID  int    `env:"NODE_ID" envDefault:"1"`
+	Address string `env:"ADDR" envDefault:""`
+	Join    bool   `env:"JOIN" envDefault:"false"`
 }
 
 // NewConfigFromEnv instantiates the server config from environment variables
