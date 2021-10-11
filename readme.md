@@ -50,3 +50,54 @@ go run ./app run
 - node will try to communicate with all known siblings
     - node will send the list of known nodes and which one it thinks is the oldest
     - that algorithm needs to be deterministic (age, then node ID alphabetical, etc)
+
+
+phase 1
+- LEADER: NODE_C
+- NODE_C: 300
+
+phase 2 (node C asks node b)
+- LEADER: NODE_B
+- NODE_B: 200
+- NODE_C: 300
+
+phase 3 (node C asks node a)
+- LEADER: NODE_A
+- NODE_A: 100
+- NODE_B: 200
+- NODE_C: 300
+
+
+- LEADER: NODE_A
+- NODE_A: 100
+- NODE_B: 200
+- NODE_C: 300
+
+- NODE_D: 2000
+
+
+
+```sh
+# A
+NODE_ADDRESS="localhost:11000" \
+RAFT_ADDRESS="localhost:12000" \
+RAFT_ID="node-a" \
+RAFT_DIR=".local/node-a" \
+PEER_ADDRESSES="localhost:11000,localhost:11001,localhost:11002" \
+go run ./app run
+
+NODE_ADDRESS="localhost:11001" \
+RAFT_ADDRESS="localhost:12001" \
+RAFT_ID="node-b" \
+RAFT_DIR=".local/node-b" \
+PEER_ADDRESSES="localhost:11000,localhost:11001,localhost:11002" \
+go run ./app run
+
+NODE_ADDRESS="localhost:11002" \
+RAFT_ADDRESS="localhost:12002" \
+RAFT_ID="node-a" \
+RAFT_DIR=".local/node-c" \
+PEER_ADDRESSES="localhost:11000,localhost:11001,localhost:11002" \
+go run ./app run
+
+```
