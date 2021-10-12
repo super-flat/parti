@@ -73,7 +73,7 @@ func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
 	}
 
 	if err := json.Unmarshal(data, &entry); err != nil {
-		return sm.Result{Value: ResultCodeFailure, Data: nil}, err
+		return sm.Result{Value: ResultCodeFailure, Data: data}, err
 	}
 
 	s.Payload[entry.Key] = entry
