@@ -65,7 +65,7 @@ func (s *ExampleStateMachine) Lookup(query interface{}) (interface{}, error) {
 
 // Update updates the object using the specified committed raft entry.
 func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
-	var entry Entry
+	var entry *Entry
 	err := json.Unmarshal(data, &entry)
 
 	if err != nil {
@@ -76,7 +76,7 @@ func (s *ExampleStateMachine) Update(data []byte) (sm.Result, error) {
 		return sm.Result{Value: ResultCodeFailure, Data: nil}, err
 	}
 
-	s.Payload[entry.Key] = &Entry{Key: entry.Key, Value: entry.Value}
+	s.Payload[entry.Key] = entry
 	s.Count++
 
 	return sm.Result{Value: ResultCodeSuccess, Data: data}, nil
