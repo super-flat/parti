@@ -5,11 +5,10 @@ import (
 )
 
 type Config struct {
-	RaftNodeID   uint64 `env:"RAFT_ID"`
-	RaftPort     string `env:"RAFT_PORT"`
-	ApiPort      string `env:"API_PORT"`
-	InitialNodes map[int]string
-	Peers        []string `env:"PEERS" envDefault:""`
+	RaftNodeID uint64   `env:"RAFT_ID"`
+	RaftPort   string   `env:"RAFT_PORT"`
+	ApiPort    string   `env:"API_PORT"`
+	Peers      []string `env:"PEERS" envDefault:""`
 }
 
 // NewConfigFromEnv instantiates the server config from environment variables
