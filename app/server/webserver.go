@@ -190,28 +190,3 @@ func (w *WebServer) handleBootstrap(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, output)
 }
-
-func (w *WebServer) handleInfo(c *gin.Context) {
-	var leader uint64 = uint64(0)
-	hasLeader := false
-	nodes := make(map[uint64]string)
-	if w.nodeHost != nil {
-		leader, hasLeader, _ = w.nodeHost.GetLeaderID(w.raftClusterID)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		res, err := w.nodeHost.SyncGetClusterMembership(ctx, w.raftClusterID)
-		if err != nil {
-			fmt.Println(err.Error())
-		} else {
-			nodes = res.Nodes
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"hasNodeHost": w.nodeHost != nil,
-		"leader":      leader,
-		"hasLeader":   hasLeader,
-		"nodes":       nodes,
-		"joinable":    w.isJoinable(),
-	})
-}
