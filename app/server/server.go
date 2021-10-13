@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
@@ -80,12 +81,11 @@ func Run(cfg *Config) {
 	}
 	datadir := filepath.Join(
 		".db",
-		fmt.Sprintf("node=%d", cfg.NodeID),
+		fmt.Sprintf("node=%d/%v/", cfg.NodeID, time.Now().Unix()),
 	)
 	// config for the nodehost
 	// See GoDoc for all available options
 	nhc := config.NodeHostConfig{
-		WALDir:         datadir,
 		NodeHostDir:    datadir,
 		RTTMillisecond: 200,
 		RaftAddress:    nodeAddr,
