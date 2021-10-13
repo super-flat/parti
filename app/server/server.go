@@ -1,13 +1,20 @@
 package server
 
 import (
-	"flag"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
@@ -19,48 +26,36 @@ const (
 	exampleClusterID uint64 = 128
 )
 
-var (
-	// initial nodes count is fixed to three, their addresses are also fixed
-	// these are the initial member nodes of the Raft cluster.
-	addresses = []string{
-		"localhost:63001",
-		"localhost:63002",
-		"localhost:63003",
-	}
-)
-
 func Run(cfg *Config) {
-	flag.Parse()
-	if len(cfg.Address) == 0 && cfg.NodeID != 1 && cfg.NodeID != 2 && cfg.NodeID != 3 {
-		fmt.Fprintf(os.Stderr, "node id must be 1, 2 or 3 when address is not specified\n")
-		os.Exit(1)
-	}
 	// https://github.com/golang/go/issues/17393
 	if runtime.GOOS == "darwin" {
 		signal.Ignore(syscall.Signal(0xd))
 	}
+
+	webServer := NewWebServer(exampleClusterID, uint64(cfg.RaftNodeID), cfg.RaftPort, cfg.ApiPort)
+	webServer.Run()
+
+	foundCluster := false
 	initialMembers := make(map[uint64]string)
-	// when joining a new node which is not an initial members, the initialMembers
-	// map should be empty.
-	// when restarting a node that is not a member of the initial nodes, you can
-	// leave the initialMembers to be empty. we still populate the initialMembers
-	// here for simplicity.
-	if !cfg.Join {
-		for idx, v := range addresses {
-			// key is the NodeID, NodeID is not allowed to be 0
-			// value is the raft address
-			initialMembers[uint64(idx+1)] = v
+
+	peers, err := queryPeers(cfg.Peers)
+	if err != nil {
+		fmt.Printf("failure, %s\n", err.Error())
+	} else {
+		for _, n := range peers {
+			if n.Joinable {
+				foundCluster = true
+				initialMembers = make(map[uint64]string)
+				break
+			}
+			initialMembers[n.RaftNodeID] = n.RaftAddr
+			fmt.Printf("found peer, id=%d, addr=%s\n", n.RaftNodeID, n.RaftAddr)
 		}
 	}
-	var nodeAddr string
-	// for simplicity, in this example program, addresses of all those 3 initial
-	// raft members are hard coded. when address is not specified on the command
-	// line, we assume the node being launched is an initial raft member.
-	if len(cfg.Address) != 0 {
-		nodeAddr = cfg.Address
-	} else {
-		nodeAddr = initialMembers[uint64(cfg.NodeID)]
-	}
+
+	fmt.Printf("found cluster: %v\n", foundCluster)
+
+	nodeAddr := fmt.Sprintf("localhost:%s", cfg.RaftPort)
 	fmt.Fprintf(os.Stdout, "node address: %s\n", nodeAddr)
 	// change the log verbosity
 	logger.GetLogger("raft").SetLevel(logger.ERROR)
@@ -70,7 +65,7 @@ func Run(cfg *Config) {
 	// config for raft node
 	// See GoDoc for all available options
 	rc := config.Config{
-		NodeID:             uint64(cfg.NodeID),
+		NodeID:             uint64(cfg.RaftNodeID),
 		ClusterID:          exampleClusterID,
 		ElectionRTT:        10,
 		HeartbeatRTT:       1,
@@ -80,7 +75,7 @@ func Run(cfg *Config) {
 	}
 	datadir := filepath.Join(
 		".db",
-		fmt.Sprintf("node=%d", cfg.NodeID),
+		fmt.Sprintf("node=%d", cfg.RaftNodeID),
 	)
 	// config for the nodehost
 	// See GoDoc for all available options
@@ -94,13 +89,84 @@ func Run(cfg *Config) {
 	if err != nil {
 		panic(err)
 	}
-	if err := nh.StartCluster(initialMembers, cfg.Join, fsm.NewExampleStateMachine, rc); err != nil {
+	if err := nh.StartCluster(initialMembers, foundCluster, fsm.NewExampleStateMachine, rc); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to add cluster, %v\n", err)
 		os.Exit(1)
 	}
+	webServer.SetNodeHost(nh)
 
-	// make webserver
-	webServer := GetWebServer(exampleClusterID, nh)
-	webServerAddr := fmt.Sprintf(":%s", cfg.WebPort)
-	webServer.Run(webServerAddr)
+	if foundCluster {
+		for _, peer := range peers {
+			if peer.Joinable {
+				err := joinCluster(peer, cfg.RaftNodeID, nodeAddr)
+				if err != nil {
+					log.Fatal(err)
+				}
+				break
+			}
+		}
+	}
+
+	// Wait for interrupt signal to gracefully shutdown the server with
+	// a timeout of 5 seconds.
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	log.Println("Shutdown Server ...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	webServer.Stop(ctx)
+	log.Println("Server exiting")
+}
+
+type PeerNode struct {
+	RaftClusterID uint64
+	RaftNodeID    uint64
+	RaftAddr      string
+	ApiAddr       string
+	Joinable      bool
+}
+
+func queryPeers(peerAddresses []string) ([]*PeerNode, error) {
+	output := make([]*PeerNode, 0, len(peerAddresses))
+
+	for _, addr := range peerAddresses {
+		r, err := http.Get(fmt.Sprintf("http://%s/info", addr))
+		if err != nil {
+			return nil, err
+		}
+		var b BootstrapInfo
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			return nil, err
+		}
+
+		host := strings.Split(addr, ":")[0]
+		raftAddr := fmt.Sprintf("%s:%s", host, b.RaftPort)
+
+		peer := &PeerNode{
+			ApiAddr:       addr,
+			RaftClusterID: b.RaftClusterID,
+			RaftNodeID:    b.RaftNodeID,
+			RaftAddr:      raftAddr,
+			Joinable:      b.Joinable,
+		}
+
+		output = append(output, peer)
+	}
+
+	return output, nil
+}
+
+func joinCluster(peer *PeerNode, myRaftID uint64, myRaftAddr string) error {
+	addr := fmt.Sprintf("http://%s/cluster/addnode/%d/%s", peer.ApiAddr, myRaftID, myRaftAddr)
+	res, err := http.Post(addr, "application/json", bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return errors.New("failed to join cluster")
+	}
+	return nil
 }

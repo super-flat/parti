@@ -18,35 +18,29 @@ TODO:
 ```sh
 # AUTOJOIN NODES
 # node 1 (autojoins)
-WEB_PORT=11001 \
-NODE_ID=1 \
+RAFT_ID=1 \
+RAFT_PORT=63001 \
+API_PORT=11001 \
+PEERS="localhost:11001" \
 go run ./app run
 
 # node 2 (autojoins)
-WEB_PORT=11002 \
-NODE_ID=2 \
+RAFT_ID=2 \
+RAFT_PORT=63002 \
+API_PORT=11002 \
+PEERS="localhost:11001,localhost:11002" \
 go run ./app run
 
 # node 3 (autojoins)
-WEB_PORT=11003 \
-NODE_ID=3 \
+RAFT_ID=3 \
+RAFT_PORT=63003 \
+API_PORT=11003 \
+PEERS="localhost:11002,localhost:11003" \
 go run ./app run
-
-# MANUALLY JOINING NODES
-
-# first start the node
-WEB_PORT=11004 \
-NODE_ID=4 \
-ADDR=localhost:63004 \
-JOIN=true \
-go run ./app run
-
-# then instruct another joined node to let you in
-curl -X POST localhost:11001/cluster/addnode/4/localhost:63004
 
 # SET VALUES
-curl -X POST localhost:11004/db/someKey/someValue
+curl -X POST :11001/db/someKey/someValue
 
 # GET VALUES
-curl -X GET localhost:11004/db/someKey
+curl -X GET localhost:11002/db/someKey
 ```

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,10 +14,16 @@ import (
 	"github.com/super-flat/raft-poc/app/fsm"
 )
 
-func GetWebServer(clusterID uint64, nodeHost *dragonboat.NodeHost) *gin.Engine {
-	w := &WebServer{clusterID: clusterID, nodeHost: nodeHost}
-
+func NewWebServer(clusterID uint64, nodeID uint64, raftPort string, apiPort string) *WebServer {
+	w := &WebServer{
+		raftClusterID: clusterID,
+		raftNodeID:    nodeID,
+		raftPort:      raftPort,
+		raftJoinable:  false,
+		apiPort:       apiPort,
+	}
 	r := gin.Default()
+	w.router = r
 
 	r.GET("/ping", w.handlePing)
 	// DB methods
@@ -23,13 +31,57 @@ func GetWebServer(clusterID uint64, nodeHost *dragonboat.NodeHost) *gin.Engine {
 	r.POST("/db/:key/:value", w.handleSet)
 	// Cluster methods
 	r.POST("/cluster/addnode/:node_id/:node_addr", w.handleAddNode)
+	// tmp
+	r.GET("/info", w.handleBootstrap)
 
-	return r
+	return w
 }
 
 type WebServer struct {
-	clusterID uint64
-	nodeHost  *dragonboat.NodeHost
+	raftClusterID uint64
+	raftNodeID    uint64
+	raftPort      string
+	raftJoinable  bool
+
+	apiPort  string
+	router   *gin.Engine
+	nodeHost *dragonboat.NodeHost
+	srv      *http.Server
+}
+
+func (w *WebServer) isJoinable() bool {
+	if w.nodeHost == nil {
+		return false
+	}
+	_, hasLeader, err := w.nodeHost.GetLeaderID(w.raftClusterID)
+	return err == nil && hasLeader
+}
+
+func (w *WebServer) Run() {
+	w.srv = &http.Server{
+		Addr:    fmt.Sprintf(":%s", w.apiPort),
+		Handler: w.router,
+	}
+
+	go func() {
+		// service connections
+		if err := w.srv.ListenAndServe(); err != nil {
+			log.Printf("listen: %s\n", err)
+		}
+	}()
+}
+
+func (w *WebServer) Stop(ctx context.Context) {
+	if w.srv != nil {
+		if err := w.srv.Shutdown(ctx); err != nil {
+			log.Fatal("Server Shutdown:", err)
+		}
+		log.Println("Server exiting")
+	}
+}
+
+func (w *WebServer) SetNodeHost(nodeHost *dragonboat.NodeHost) {
+	w.nodeHost = nodeHost
 }
 
 func (w *WebServer) handlePing(c *gin.Context) {
@@ -44,7 +96,7 @@ func (w *WebServer) handleGet(c *gin.Context) {
 	query := fsm.Query{Key: key}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
-	res, err := w.nodeHost.SyncRead(ctx, w.clusterID, query)
+	res, err := w.nodeHost.SyncRead(ctx, w.raftClusterID, query)
 	cancel()
 
 	if err != nil {
@@ -75,7 +127,7 @@ func (w *WebServer) handleSet(c *gin.Context) {
 		})
 	}
 
-	cs := w.nodeHost.GetNoOPSession(w.clusterID)
+	cs := w.nodeHost.GetNoOPSession(w.raftClusterID)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 	result, err := w.nodeHost.SyncPropose(ctx, cs, entryBytes)
 	cancel()
@@ -97,7 +149,7 @@ func (w *WebServer) handleSet(c *gin.Context) {
 func (w *WebServer) handleAddNode(c *gin.Context) {
 	nodeID, _ := strconv.Atoi(c.Param("node_id"))
 	nodeAddress := c.Param("node_addr")
-	response, err := w.nodeHost.RequestAddNode(w.clusterID, uint64(nodeID), nodeAddress, 0, 3*time.Second)
+	response, err := w.nodeHost.RequestAddNode(w.raftClusterID, uint64(nodeID), nodeAddress, 0, 3*time.Second)
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -120,4 +172,46 @@ func (w *WebServer) handleAddNode(c *gin.Context) {
 			})
 		}
 	}
+}
+
+type BootstrapInfo struct {
+	RaftClusterID uint64 `json:"raft_cluster_id"`
+	RaftNodeID    uint64 `json:"raft_node_id"`
+	RaftPort      string `json:"raft_port"`
+	Joinable      bool   `json:"joinable"`
+}
+
+func (w *WebServer) handleBootstrap(c *gin.Context) {
+	output := &BootstrapInfo{
+		RaftClusterID: w.raftClusterID,
+		RaftNodeID:    w.raftNodeID,
+		RaftPort:      w.raftPort,
+		Joinable:      w.isJoinable(),
+	}
+	c.JSON(http.StatusOK, output)
+}
+
+func (w *WebServer) handleInfo(c *gin.Context) {
+	var leader uint64 = uint64(0)
+	hasLeader := false
+	nodes := make(map[uint64]string)
+	if w.nodeHost != nil {
+		leader, hasLeader, _ = w.nodeHost.GetLeaderID(w.raftClusterID)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		res, err := w.nodeHost.SyncGetClusterMembership(ctx, w.raftClusterID)
+		if err != nil {
+			fmt.Println(err.Error())
+		} else {
+			nodes = res.Nodes
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"hasNodeHost": w.nodeHost != nil,
+		"leader":      leader,
+		"hasLeader":   hasLeader,
+		"nodes":       nodes,
+		"joinable":    w.isJoinable(),
+	})
 }
