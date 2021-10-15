@@ -39,7 +39,7 @@ PEERS="localhost:11002,localhost:11003" \
 go run ./app run
 
 # SET VALUES
-curl -X POST :11001/db/someKey/someValue
+curl -X POST localhost:11001/db/someKey/someValue
 
 # GET VALUES
 curl -X GET localhost:11002/db/someKey
