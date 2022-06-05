@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/raft"
-	"github.com/ksrichard/easyraft"
+	hraft "github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
 	"github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/serializer"
@@ -20,6 +19,7 @@ import (
 	"github.com/troop-dev/go-kit/pkg/logging"
 
 	"github.com/super-flat/raft-poc/gen/localpb"
+	"github.com/super-flat/raft-poc/node/raftwrapper"
 	"github.com/super-flat/raft-poc/node/rebalance"
 )
 
@@ -31,7 +31,7 @@ const (
 type Node struct {
 	partitionCount uint32
 
-	node     *easyraft.Node
+	node     *raftwrapper.Node
 	nodeData *fsm.InMemoryMapService
 
 	mtx       *sync.RWMutex
@@ -42,7 +42,7 @@ type Node struct {
 	grpcPort   uint16
 	grpcServer grpcserver.Server
 
-	peerObservations <-chan raft.Observation
+	peerObservations <-chan hraft.Observation
 
 	msgHandler Handler
 }
@@ -52,7 +52,7 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir str
 	fsmService := newInMemoryMapService()
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
-	node, err := easyraft.NewNode(
+	node, err := raftwrapper.NewNode(
 		int(raftPort),
 		int(discoveryPort),
 		dataDir,
@@ -146,16 +146,16 @@ func (n *Node) registerPeerObserver() {
 	if n.peerObservations != nil {
 		return
 	}
-	observerCh := make(chan raft.Observation, 100)
-	filterfn := func(o *raft.Observation) bool {
+	observerCh := make(chan hraft.Observation, 100)
+	filterfn := func(o *hraft.Observation) bool {
 		switch o.Data.(type) {
-		case raft.PeerObservation:
+		case hraft.PeerObservation:
 			return true
 		default:
 			return false
 		}
 	}
-	observer := raft.NewObserver(observerCh, true, raft.FilterFn(filterfn))
+	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterfn))
 	n.node.Raft.RegisterObserver(observer)
 	n.peerObservations = observerCh
 }
@@ -184,7 +184,7 @@ func (n *Node) handleShareGrpcPort() {
 
 func (n *Node) handlePeerObservations() {
 	for observation := range n.peerObservations {
-		peerObservation, ok := observation.Data.(raft.PeerObservation)
+		peerObservation, ok := observation.Data.(hraft.PeerObservation)
 		if ok && n.IsLeader() {
 			if peerObservation.Removed {
 				// remove from the list of ports
