@@ -12,7 +12,7 @@ import (
 
 	hraft "github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/fsm"
+	easyraftfsm "github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/serializer"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
@@ -20,6 +20,7 @@ import (
 
 	"github.com/super-flat/parti/gen/localpb"
 	"github.com/super-flat/parti/node/raftwrapper"
+	"github.com/super-flat/parti/node/raftwrapper/fsm"
 	"github.com/super-flat/parti/node/rebalance"
 )
 
@@ -47,16 +48,20 @@ type Node struct {
 	msgHandler Handler
 }
 
-func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir string, msgHandler Handler, partitionCount uint32) *Node {
+func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
 	// EasyRaft Node
-	fsmService := newInMemoryMapService()
+	fsmService := fsm.NewInMemoryMapService()
+
+	// select discovery method
+	// TODO: make configurable (k8s, docker, etc)
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
+
+	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
 		int(raftPort),
 		int(discoveryPort),
-		dataDir,
-		[]fsm.FSMService{fsmService},
+		fsmService,
 		serializer.NewMsgPackSerializer(),
 		discoveryService,
 	)
@@ -381,20 +386,20 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 }
 
 func RaftDeleteValue(n *Node, group string, key string) error {
-	request := fsm.MapRemoveRequest{MapName: group, Key: key}
+	request := easyraftfsm.MapRemoveRequest{MapName: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftPutValue(n *Node, group string, key string, value interface{}) error {
-	request := fsm.MapPutRequest{MapName: group, Key: key, Value: value}
+	request := easyraftfsm.MapPutRequest{MapName: group, Key: key, Value: value}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
 	result, err := n.node.RaftApply(
-		fsm.MapGetRequest{MapName: group, Key: key},
+		easyraftfsm.MapGetRequest{MapName: group, Key: key},
 		time.Second,
 	)
 	var output T
@@ -443,12 +448,6 @@ func raftGetStringLocally(n *Node, group string, key string) (string, error) {
 		return "", fmt.Errorf("could not deserialize value '%v'", value)
 	}
 	return outputTyped, nil
-}
-
-// newInMemoryMapService copies the built in constructor but explicitly
-// returns the struct instead of the interface...
-func newInMemoryMapService() *fsm.InMemoryMapService {
-	return &fsm.InMemoryMapService{Maps: map[string]*fsm.Map{}}
 }
 
 type Peer struct {

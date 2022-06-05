@@ -44,7 +44,7 @@ type Node struct {
 }
 
 // NewNode returns an EasyRaft node
-func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, fsmService fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := newNodeID(6)
@@ -82,7 +82,7 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 	)
 
 	// init FSM
-	sm := fsm.NewRoutingFSM(services)
+	sm := fsm.NewRoutingFSM([]fsm.FSMService{fsmService})
 	sm.Init(serializer)
 
 	// memberlist config
