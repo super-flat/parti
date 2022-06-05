@@ -18,9 +18,9 @@ import (
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
 
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"github.com/super-flat/raft-poc/node/raftwrapper"
-	"github.com/super-flat/raft-poc/node/rebalance"
+	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node/raftwrapper"
+	"github.com/super-flat/parti/node/rebalance"
 )
 
 const (

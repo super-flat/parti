@@ -1,4 +1,4 @@
-module github.com/super-flat/raft-poc
+module github.com/super-flat/parti
 
 go 1.18
 
