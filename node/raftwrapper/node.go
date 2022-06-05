@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"os/signal"
@@ -15,15 +16,15 @@ import (
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
-	hraft "github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
 	"github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/grpc"
 	"github.com/ksrichard/easyraft/serializer"
-	"github.com/zemirco/uid"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
 
 type Node struct {
 	ID               string
@@ -31,7 +32,7 @@ type Node struct {
 	DiscoveryPort    int
 	address          string
 	dataDir          string
-	Raft             *hraft.Raft
+	Raft             *raft.Raft
 	GrpcServer       *ggrpc.Server
 	DiscoveryMethod  discovery.DiscoveryMethod
 	TransportManager *transport.Manager
@@ -48,9 +49,10 @@ type Node struct {
 func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod, snapshotEnabled bool) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
-	nodeId := uid.New(50)
-	raftConf := hraft.DefaultConfig()
-	raftConf.LocalID = hraft.ServerID(nodeId)
+	nodeId := newNodeID(6)
+
+	raftConf := raft.DefaultConfig()
+	raftConf.LocalID = raft.ServerID(nodeId)
 	raftLogCacheSize := 512
 	raftConf.LogLevel = "Info"
 
@@ -61,14 +63,14 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 	// cardinality, so should be OK.
 	stableStore := raft.NewInmemStore()
 
-	logStore, err := hraft.NewLogCache(raftLogCacheSize, stableStore)
+	logStore, err := raft.NewLogCache(raftLogCacheSize, stableStore)
 	if err != nil {
 		return nil, err
 	}
 
-	var snapshotStore hraft.SnapshotStore
+	var snapshotStore raft.SnapshotStore
 	if !snapshotEnabled {
-		snapshotStore = hraft.NewDiscardSnapshotStore()
+		snapshotStore = raft.NewDiscardSnapshotStore()
 	} else {
 		// TODO: implement: snapshotStore = NewLogsOnlySnapshotStore(serializer)
 		return nil, errors.New("snapshots are not supported at the moment")
@@ -76,7 +78,7 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 
 	// grpc transport
 	grpcTransport := transport.New(
-		hraft.ServerAddress(addr),
+		raft.ServerAddress(addr),
 		[]ggrpc.DialOption{
 			// TODO: is this needed, or is insecure default?
 			ggrpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -93,7 +95,7 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 	mlConfig.Name = fmt.Sprintf("%s:%d", nodeId, raftPort)
 
 	// raft server
-	raftServer, err := hraft.NewRaft(raftConf, sm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
+	raftServer, err := raft.NewRaft(raftConf, sm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
 	if err != nil {
 		return nil, err
 	}
@@ -124,17 +126,17 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 
 // Start starts the Node and returns a channel that indicates, that the node has been stopped properly
 func (n *Node) Start() (chan interface{}, error) {
-	n.logger.Println("Starting Node...")
+	n.logger.Printf("Starting Raft Node, ID=%s", n.ID)
 	// set stopped as false
 	if atomic.LoadUint32(n.stopped) == 1 {
 		atomic.StoreUint32(n.stopped, 0)
 	}
 
 	// raft server
-	configuration := hraft.Configuration{
-		Servers: []hraft.Server{
+	configuration := raft.Configuration{
+		Servers: []raft.Server{
 			{
-				ID:      hraft.ServerID(n.ID),
+				ID:      raft.ServerID(n.ID),
 				Address: n.TransportManager.Transport().LocalAddr(),
 			},
 		},
@@ -238,7 +240,7 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 			serverId := detailsResp.ServerId
 			needToAddNode := true
 			for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-				if server.ID == hraft.ServerID(serverId) || string(server.Address) == peer {
+				if server.ID == raft.ServerID(serverId) || string(server.Address) == peer {
 					needToAddNode = false
 					break
 				}
@@ -262,7 +264,7 @@ func (n *Node) NotifyJoin(node *memberlist.Node) {
 	nodeId, nodePort := nameParts[0], nameParts[1]
 	nodeAddr := fmt.Sprintf("%s:%s", node.Addr, nodePort)
 	if err := n.Raft.VerifyLeader().Error(); err == nil {
-		result := n.Raft.AddVoter(hraft.ServerID(nodeId), hraft.ServerAddress(nodeAddr), 0, 0)
+		result := n.Raft.AddVoter(raft.ServerID(nodeId), raft.ServerAddress(nodeAddr), 0, 0)
 		if result.Error() != nil {
 			log.Println(result.Error().Error())
 		}
@@ -275,7 +277,7 @@ func (n *Node) NotifyLeave(node *memberlist.Node) {
 	if n.DiscoveryMethod.SupportsNodeAutoRemoval() {
 		nodeId := strings.Split(node.Name, ":")[0]
 		if err := n.Raft.VerifyLeader().Error(); err == nil {
-			result := n.Raft.RemoveServer(hraft.ServerID(nodeId), 0, 0)
+			result := n.Raft.RemoveServer(raft.ServerID(nodeId), 0, 0)
 			if result.Error() != nil {
 				log.Println(result.Error().Error())
 			}
@@ -312,4 +314,15 @@ func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{
 		return nil, err
 	}
 	return response, nil
+}
+
+// newNodeID returns a random node ID of length `size`
+func newNodeID(size int) string {
+	// TODO, do we need to do this anymore?
+	rand.Seed(time.Now().UnixNano())
+	b := make([]byte, size)
+	for i := range b {
+		b[i] = nodeIDCharacters[rand.Intn(len(nodeIDCharacters))]
+	}
+	return string(b)
 }
