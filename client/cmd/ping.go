@@ -5,14 +5,14 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"google.golang.org/grpc"
+	partipb "github.com/super-flat/parti/gen/parti"
+	grpcclient "github.com/super-flat/parti/pkg/grpc/client"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func init() {
 	pingCMD.Flags().String("addr", "", "grpc address")
-	pingCMD.Flags().Uint32("partition", 0, "partitiont to ping")
+	pingCMD.Flags().Uint32("partition", 0, "partition to ping")
 
 	rootCmd.AddCommand(pingCMD)
 }
@@ -24,19 +24,18 @@ var pingCMD = &cobra.Command{
 		grpcAddr, _ := cmd.Flags().GetString("addr")
 		partition, _ := cmd.Flags().GetUint32("partition")
 
-		conn, err := grpc.Dial(
-			grpcAddr,
-			grpc.WithInsecure(),
-			grpc.WithBlock(),
-			grpc.EmptyDialOption{},
-		)
+		conn, err := grpcclient.
+			NewBuilder().
+			WithInsecure().
+			GetConn(cmd.Context(), grpcAddr)
+
 		if err != nil {
 			// todo: don't panic here
 			panic(err)
 		}
-		client := localpb.NewClusteringClient(conn)
+		client := partipb.NewClusteringClient(conn)
 
-		req := &localpb.PingRequest{PartitionId: partition}
+		req := &partipb.PingRequest{PartitionId: partition}
 		resp, err := client.Ping(context.Background(), req)
 		if err != nil {
 			panic(err)

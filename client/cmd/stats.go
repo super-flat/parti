@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"google.golang.org/grpc"
+	partipb "github.com/super-flat/parti/gen/parti"
+	grpcclient "github.com/super-flat/parti/pkg/grpc/client"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -20,18 +20,17 @@ var statsCMD = &cobra.Command{
 	Short: "get node stats",
 	Run: func(cmd *cobra.Command, args []string) {
 		grpcAddr, _ := cmd.Flags().GetString("addr")
-		conn, err := grpc.Dial(
-			grpcAddr,
-			grpc.WithInsecure(),
-			grpc.WithBlock(),
-			grpc.EmptyDialOption{},
-		)
+		conn, err := grpcclient.
+			NewBuilder().
+			WithInsecure().
+			GetConn(cmd.Context(), grpcAddr)
+
 		if err != nil {
 			// todo: don't panic here
 			panic(err)
 		}
-		client := localpb.NewClusteringClient(conn)
-		resp, err := client.Stats(context.Background(), &localpb.StatsRequest{})
+		client := partipb.NewClusteringClient(conn)
+		resp, err := client.Stats(context.Background(), &partipb.StatsRequest{})
 		if err != nil {
 			panic(err)
 		}

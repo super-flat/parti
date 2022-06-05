@@ -4,7 +4,7 @@ import (
 	"sort"
 )
 
-type rebalancePeer struct {
+type rebalancedPeer struct {
 	PeerID       string
 	PartitionIDs *queue[uint32]
 }
@@ -17,9 +17,9 @@ func ComputeRebalance(numPartitions uint32, currentAssignments map[uint32]string
 	}
 
 	// compute the number of assignments per peer
-	peerMap := make(map[string]*rebalancePeer, len(activePeerIDs))
+	peerMap := make(map[string]*rebalancedPeer, len(activePeerIDs))
 	for _, peerID := range activePeerIDs {
-		peerMap[peerID] = &rebalancePeer{
+		peerMap[peerID] = &rebalancedPeer{
 			PeerID:       peerID,
 			PartitionIDs: newQueue[uint32]((numPartitions)),
 		}
@@ -39,7 +39,7 @@ func ComputeRebalance(numPartitions uint32, currentAssignments map[uint32]string
 	}
 
 	// sort the peers according to number of assignments
-	peers := make([]*rebalancePeer, 0, len(peerMap))
+	peers := make([]*rebalancedPeer, 0, len(peerMap))
 	for _, peer := range peerMap {
 		peers = append(peers, peer)
 	}
@@ -66,18 +66,18 @@ func ComputeRebalance(numPartitions uint32, currentAssignments map[uint32]string
 		highPeer := peers[j]
 		// if the lower peer has the ideal number of partitions, continue
 		if lowPeer.PartitionIDs.Length() >= idealBalance {
-			i += 1
+			i++
 			continue
 		}
 		// let the heaviest peers have more partitions than the
 		// lightest until you cross the "remainder"
 		maxBalance := idealBalance
 		if len(peers)-j <= int(numPartitions)%len(peers) {
-			maxBalance += 1
+			maxBalance++
 		}
 		// if the highest peer has the ideal number of partitions, continue
 		if highPeer.PartitionIDs.Length() == maxBalance {
-			j -= 1
+			j--
 			continue
 		}
 		// take a partition from the highest peer and give to the lowest peer

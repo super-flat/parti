@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/cluster"
 )
 
 func Run() {
@@ -23,7 +23,7 @@ func Run() {
 	handler := &ExampleHandler{}
 	// run the raft node
 	numPartitions := uint32(10)
-	partiNode := node.NewNode(
+	partiNode := cluster.NewNode(
 		cfg.RaftPort,
 		cfg.GrpcPort,
 		cfg.DiscoveryPort,
@@ -35,7 +35,7 @@ func Run() {
 		panic(err)
 	}
 	// run an http server
-	web := NewWebServer(partiNode, uint16(cfg.HttpPort))
+	web := NewWebServer(partiNode, uint16(cfg.HTTPPort))
 	web.Start()
 	// wait for interruption/termination
 	sigs := make(chan os.Signal, 1)

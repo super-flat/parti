@@ -1,4 +1,4 @@
-package node
+package cluster
 
 import (
 	"context"
@@ -15,12 +15,11 @@ import (
 	"github.com/ksrichard/easyraft/discovery"
 	"github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/serializer"
-	"github.com/troop-dev/go-kit/pkg/grpcclient"
-	"github.com/troop-dev/go-kit/pkg/grpcserver"
-	"github.com/troop-dev/go-kit/pkg/logging"
-
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"github.com/super-flat/raft-poc/node/rebalance"
+	"github.com/super-flat/parti/cluster/rebalance"
+	partipb "github.com/super-flat/parti/gen/parti"
+	"github.com/super-flat/parti/pkg/grpc/client"
+	"github.com/super-flat/parti/pkg/grpc/server"
+	"github.com/super-flat/parti/pkg/logging"
 )
 
 const (
@@ -40,7 +39,7 @@ type Node struct {
 	stoppedCh chan interface{}
 
 	grpcPort   uint16
-	grpcServer grpcserver.Server
+	grpcServer server.Server
 
 	peerObservations <-chan raft.Observation
 
@@ -111,7 +110,7 @@ func (n *Node) Start(ctx context.Context) error {
 	// create the grpc server
 	// grpc server
 	clusteringServer := NewClusteringService(n)
-	grpcServer, err := grpcserver.
+	grpcServer, err := server.
 		NewServerBuilder().
 		WithReflection(false).
 		// WithDefaultUnaryInterceptors().
@@ -264,7 +263,7 @@ func (n *Node) PartitionMappings() map[uint32]string {
 	return output
 }
 
-func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
+func (n *Node) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -277,7 +276,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 		if err != nil {
 			return nil, err
 		}
-		resp := &localpb.SendResponse{
+		resp := &partipb.SendResponse{
 			NodeId:      n.GetNodeID(),
 			PartitionId: request.GetPartitionId(),
 			MessageId:   request.GetMessageId(),
@@ -296,7 +295,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 	return peer.GetClient(ctx).Send(ctx, request)
 }
 
-func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
+func (n *Node) Ping(ctx context.Context, request *partipb.PingRequest) (*partipb.PingResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -304,7 +303,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 	}
 	if ownerNodeID == n.node.ID {
 		logging.Debugf("received ping, answering locally, partition=%d", partitionID)
-		resp := &localpb.PingResponse{
+		resp := &partipb.PingResponse{
 			NodeId: n.node.ID,
 			Hops:   request.GetHops() + 1,
 		}
@@ -318,7 +317,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
-	resp, err := peer.GetClient(ctx).Ping(ctx, &localpb.PingRequest{
+	resp, err := peer.GetClient(ctx).Ping(ctx, &partipb.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,
 	})
@@ -460,7 +459,6 @@ type Peer struct {
 }
 
 func NewPeer(id string, raftAddr string, grpcPort uint16) *Peer {
-
 	addrParts := strings.Split(raftAddr, ":")
 	if len(addrParts) != 2 {
 		panic(fmt.Errorf("cant parse raft addr '%s'", raftAddr))
@@ -480,17 +478,13 @@ func (p Peer) IsReady() bool {
 	return p.GrpcPort != 0
 }
 
-func (p Peer) GetClient(ctx context.Context) localpb.ClusteringClient {
+func (p Peer) GetClient(ctx context.Context) partipb.ClusteringClient {
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.GrpcPort)
-	conn, err := grpcclient.NewBuilder().
-		WithBlock().
-		WithInsecure().
-		GetConn(ctx, grpcAddr)
-
+	conn, err := client.GetClientConn(ctx, grpcAddr)
 	if err != nil {
 		// todo: don't panic here
 		panic(err)
 	}
-	client := localpb.NewClusteringClient(conn)
-	return client
+	clusteringClient := partipb.NewClusteringClient(conn)
+	return clusteringClient
 }

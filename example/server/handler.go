@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/cluster"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -29,4 +29,4 @@ func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *an
 	return anypb.New(wrapperspb.String(resp))
 }
 
-var _ node.Handler = &ExampleHandler{}
+var _ cluster.Handler = &ExampleHandler{}

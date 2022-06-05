@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/cluster"
+	partipb "github.com/super-flat/parti/gen/parti"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -18,43 +18,43 @@ import (
 
 // WebServer is an http server that forwards messages to the raft cluster
 type WebServer struct {
-	Parti    *node.Node
-	HttpPort uint16
+	Parti    *cluster.Node
+	HTTPPort uint16
 	server   *http.Server
 }
 
 // NewWebServer returns a new WebServer
-func NewWebServer(partiNode *node.Node, HttpPort uint16) *WebServer {
+func NewWebServer(partiNode *cluster.Node, HTTPPort uint16) *WebServer {
 	return &WebServer{
 		Parti:    partiNode,
-		HttpPort: HttpPort,
+		HTTPPort: HTTPPort,
 	}
 }
 
 // Start the webserver in background
-func (w *WebServer) Start() {
+func (wb *WebServer) Start() {
 	// define a router that handles messages
 	mux := http.NewServeMux()
-	mux.HandleFunc("/send", w.handleMessage)
+	mux.HandleFunc("/send", wb.handleMessage)
 	// create a webserver
-	w.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", w.HttpPort),
+	wb.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", wb.HTTPPort),
 		Handler: mux,
 	}
 	// run the server in a thread
 	go func() {
-		if err := w.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := wb.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
-	log.Printf("webserver listening on '%s'", w.server.Addr)
+	log.Printf("webserver listening on '%s'", wb.server.Addr)
 }
 
 // Stop gracefully shuts down this webserver
-func (w *WebServer) Stop(ctx context.Context) {
+func (wb *WebServer) Stop(ctx context.Context) {
 	newCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := w.server.Shutdown(newCtx); err != nil {
+	if err := wb.server.Shutdown(newCtx); err != nil {
 		log.Fatalf("webserver shutdown failed:%+v", err)
 	}
 	log.Print("webserver shut down properly")
@@ -72,7 +72,7 @@ func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// read the message
 	msg, _ := anypb.New(wrapperspb.String(r.URL.Query().Get("message")))
 	// make a request
-	sendRequest := &localpb.SendRequest{
+	sendRequest := &partipb.SendRequest{
 		PartitionId: partitionID,
 		MessageId:   uuid.New().String(),
 		Message:     msg,

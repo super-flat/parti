@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/super-flat/raft-poc/example/server"
+	"github.com/super-flat/parti/example/server"
 )
 
 func init() {
