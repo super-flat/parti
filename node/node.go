@@ -59,7 +59,6 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir str
 		[]fsm.FSMService{fsmService},
 		serializer.NewMsgPackSerializer(),
 		discoveryService,
-		false,
 	)
 	if err != nil {
 		panic(err)

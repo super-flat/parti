@@ -1,7 +1,6 @@
 package raftwrapper
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -31,7 +30,6 @@ type Node struct {
 	RaftPort         int
 	DiscoveryPort    int
 	address          string
-	dataDir          string
 	Raft             *raft.Raft
 	GrpcServer       *ggrpc.Server
 	DiscoveryMethod  discovery.DiscoveryMethod
@@ -46,7 +44,7 @@ type Node struct {
 }
 
 // NewNode returns an EasyRaft node
-func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod, snapshotEnabled bool) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := newNodeID(6)
@@ -68,13 +66,11 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 		return nil, err
 	}
 
+	// snapshot store that discards everything
+	// TODO: see if there's any reason not to use this inmem snapshot store
 	var snapshotStore raft.SnapshotStore
-	if !snapshotEnabled {
-		snapshotStore = raft.NewDiscardSnapshotStore()
-	} else {
-		// TODO: implement: snapshotStore = NewLogsOnlySnapshotStore(serializer)
-		return nil, errors.New("snapshots are not supported at the moment")
-	}
+	snapshotStore = raft.NewInmemSnapshotStore()
+	// snapshotStore = raft.NewDiscardSnapshotStore()
 
 	// grpc transport
 	grpcTransport := transport.New(
@@ -111,7 +107,6 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 		ID:               nodeId,
 		RaftPort:         raftPort,
 		address:          addr,
-		dataDir:          dataDir,
 		Raft:             raftServer,
 		TransportManager: grpcTransport,
 		Serializer:       serializer,
@@ -120,7 +115,6 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.FSMServ
 		discoveryConfig:  mlConfig,
 		logger:           logger,
 		stopped:          &stopped,
-		snapshotEnabled:  snapshotEnabled,
 	}, nil
 }
 
