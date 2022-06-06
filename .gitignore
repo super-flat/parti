@@ -3,3 +3,5 @@ vendor/
 .db/
 gen/
 .idea/
+.DS_Store
+.vscode/

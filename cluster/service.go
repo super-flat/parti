@@ -4,7 +4,7 @@ import (
 	"context"
 
 	partipb "github.com/super-flat/parti/gen/parti"
-	"github.com/troop-dev/go-kit/pkg/logging"
+	"github.com/super-flat/parti/logging"
 	"google.golang.org/grpc"
 )
 

@@ -3,9 +3,8 @@ package raft
 import (
 	"context"
 
-	"github.com/super-flat/parti/logging"
-
 	partipb "github.com/super-flat/parti/gen/parti"
+	"github.com/super-flat/parti/logging"
 	"google.golang.org/grpc"
 )
 

@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	grpcclient "github.com/super-flat/parti/grpc/client"
-
 	"github.com/spf13/cobra"
 	partipb "github.com/super-flat/parti/gen/parti"
+	grpcclient "github.com/super-flat/parti/grpc/client"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

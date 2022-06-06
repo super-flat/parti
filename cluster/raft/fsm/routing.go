@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/raft"
-	"github.com/super-flat/parti/raft/serializer"
+	"github.com/super-flat/parti/cluster/raft/serializer"
 )
 
 type BaseFSMSnapshot struct {

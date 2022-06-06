@@ -1,7 +1,3 @@
-/*
- * Copyright (c) The go-kit Authors
- */
-
 package server
 
 import "google.golang.org/grpc"

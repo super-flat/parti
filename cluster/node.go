@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	partiraft "github.com/super-flat/parti/cluster/raft"
+	"github.com/super-flat/parti/cluster/raft/discovery"
+	fsm2 "github.com/super-flat/parti/cluster/raft/fsm"
+	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
 	partipb "github.com/super-flat/parti/gen/parti"
 	"github.com/super-flat/parti/grpc/client"
 	grpcserver "github.com/super-flat/parti/grpc/server"
 	"github.com/super-flat/parti/logging"
-	raft2 "github.com/super-flat/parti/raft"
-	"github.com/super-flat/parti/raft/discovery"
-	"github.com/super-flat/parti/raft/fsm"
-	"github.com/super-flat/parti/raft/serializer"
 )
 
 const (
@@ -30,8 +30,8 @@ const (
 type Node struct {
 	partitionCount uint32
 
-	node     *raft2.Node
-	nodeData *fsm.InMemoryMapService
+	node     *partiraft.Node
+	nodeData *fsm2.InMemoryMapService
 
 	mtx       *sync.RWMutex
 	isStarted bool
@@ -50,11 +50,11 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir str
 	fsmService := newInMemoryMapService()
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
-	node, err := raft2.NewNode(
+	node, err := partiraft.NewNode(
 		int(raftPort),
 		int(discoveryPort),
 		dataDir,
-		[]fsm.Service{fsmService},
+		[]fsm2.Service{fsmService},
 		serializer.NewMsgPackSerializer(),
 		discoveryService,
 		false,
@@ -85,7 +85,7 @@ func (n *Node) Stop(ctx context.Context) {
 		log.Printf("Shutting down node")
 		n.grpcServer.Stop(ctx)
 		go n.node.Stop()
-		// waits for easy raft shutdown
+		// waits for raft service shutdown
 		// TODO: sometimes this never receives, so disabling this for now
 		// <-n.stoppedCh
 		// log.Printf("Completed node shutdown")
@@ -114,7 +114,7 @@ func (n *Node) Start(ctx context.Context) error {
 		// WithDefaultStreamInterceptors().
 		WithTracingEnabled(false).
 		// WithTraceURL("").
-		WithServiceName("partiraft").
+		WithServiceName("parti-raft").
 		WithMetricsEnabled(false).
 		// WithMetricsPort(0).
 		WithPort(int(n.grpcPort)).
@@ -378,20 +378,20 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 }
 
 func RaftDeleteValue(n *Node, group string, key string) error {
-	request := fsm.MapRemoveRequest{MapName: group, Key: key}
+	request := fsm2.MapRemoveRequest{MapName: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftPutValue(n *Node, group string, key string, value interface{}) error {
-	request := fsm.MapPutRequest{MapName: group, Key: key, Value: value}
+	request := fsm2.MapPutRequest{MapName: group, Key: key, Value: value}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
 	result, err := n.node.RaftApply(
-		fsm.MapGetRequest{MapName: group, Key: key},
+		fsm2.MapGetRequest{MapName: group, Key: key},
 		time.Second,
 	)
 	var output T
@@ -444,8 +444,8 @@ func raftGetStringLocally(n *Node, group string, key string) (string, error) {
 
 // newInMemoryMapService copies the built in constructor but explicitly
 // returns the struct instead of the interface...
-func newInMemoryMapService() *fsm.InMemoryMapService {
-	return &fsm.InMemoryMapService{Maps: map[string]*fsm.Map{}}
+func newInMemoryMapService() *fsm2.InMemoryMapService {
+	return &fsm2.InMemoryMapService{Maps: map[string]*fsm2.Map{}}
 }
 
 type Peer struct {

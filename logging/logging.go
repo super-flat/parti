@@ -1,7 +1,3 @@
-/*
- * Copyright (c) The go-kit Authors
- */
-
 package logging
 
 import (
@@ -11,7 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/troop-dev/go-kit/pkg/requestid"
+	"github.com/super-flat/parti/requestid"
 )
 
 // LogLevels define the mapping between user-defined log levels and zerolog levels
