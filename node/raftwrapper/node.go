@@ -152,10 +152,6 @@ func (n *Node) Start() (chan interface{}, error) {
 	// register management services
 	n.TransportManager.Register(n.GrpcServer)
 
-	// // register client services
-	// clientGrpcServer := NewClientGrpcService(n)
-	// grpc.RegisterRaftServer(n.GrpcServer, clientGrpcServer)
-
 	// register custom raft RPC
 	raftRpcServer := NewRaftRpcServer(n)
 	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
