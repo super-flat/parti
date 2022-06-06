@@ -10,7 +10,6 @@ require (
 	github.com/hashicorp/raft v1.3.9
 	github.com/joho/godotenv v1.4.0
 	github.com/ksrichard/easyraft v1.0.0
-	github.com/mitchellh/mapstructure v1.5.0
 	github.com/spf13/cobra v1.4.0
 	github.com/troop-dev/go-kit v0.9.2
 	google.golang.org/grpc v1.47.0

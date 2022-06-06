@@ -1,6 +1,8 @@
 package raftwrapper
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -16,8 +18,8 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/grpc"
 	"github.com/ksrichard/easyraft/serializer"
+	"github.com/super-flat/parti/gen/localpb"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -95,6 +97,8 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	logger := log.Default()
 	logger.SetPrefix("[EasyRaft] ")
 
+	grpcServer := ggrpc.NewServer()
+
 	// initial stopped flag
 	var stopped uint32
 
@@ -110,6 +114,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		discoveryConfig:  mlConfig,
 		logger:           logger,
 		stopped:          &stopped,
+		GrpcServer:       grpcServer,
 	}, nil
 }
 
@@ -144,20 +149,12 @@ func (n *Node) Start() (chan interface{}, error) {
 	}
 	n.mList = list
 
-	// grpc server
-	grpcListen, err := net.Listen("tcp", n.address)
-	if err != nil {
-		log.Fatal(err)
-	}
-	grpcServer := ggrpc.NewServer()
-	n.GrpcServer = grpcServer
-
 	// register management services
-	n.TransportManager.Register(grpcServer)
+	n.TransportManager.Register(n.GrpcServer)
 
-	// register client services
-	clientGrpcServer := NewClientGrpcService(n)
-	grpc.RegisterRaftServer(grpcServer, clientGrpcServer)
+	// register custom raft RPC
+	raftRpcServer := NewRaftRpcServer(n)
+	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
 	discoveryChan, err := n.DiscoveryMethod.Start(n.ID, n.RaftPort)
@@ -167,8 +164,13 @@ func (n *Node) Start() (chan interface{}, error) {
 	go n.handleDiscoveredNodes(discoveryChan)
 
 	// serve grpc
+	// grpc server
+	grpcListen, err := net.Listen("tcp", n.address)
+	if err != nil {
+		log.Fatal(err)
+	}
 	go func() {
-		if err := grpcServer.Serve(grpcListen); err != nil {
+		if err := n.GrpcServer.Serve(grpcListen); err != nil {
 			n.logger.Fatal(err)
 		}
 	}()
@@ -224,7 +226,7 @@ func (n *Node) Stop() {
 // handleDiscoveredNodes handles the discovered Node additions
 func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 	for peer := range discoveryChan {
-		detailsResp, err := GetPeerDetails(peer)
+		detailsResp, err := n.getPeerDetails(peer)
 		if err == nil {
 			serverId := detailsResp.ServerId
 			needToAddNode := true
@@ -244,6 +246,23 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 			}
 		}
 	}
+}
+
+func (n *Node) getPeerDetails(peerAddress string) (*localpb.GetPeerDetailsResponse, error) {
+	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
+	conn, err := ggrpc.Dial(peerAddress, ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	client := localpb.NewRaftClient(conn)
+
+	response, err := client.GetPeerDetails(context.Background(), &localpb.GetPeerDetailsRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 }
 
 // NotifyJoin triggered when a new Node has been joined to the cluster (discovery only)
@@ -280,29 +299,69 @@ func (n *Node) NotifyUpdate(_ *memberlist.Node) {
 // RaftApply is used to apply any new logs to the raft cluster
 // this method does automatic forwarding to Leader Node
 func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
+	// serialize the payload for use in raft
 	payload, err := n.Serializer.Serialize(request)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := n.Raft.VerifyLeader().Error(); err == nil {
-		result := n.Raft.Apply(payload, timeout)
-		if result.Error() != nil {
-			return nil, result.Error()
-		}
-		switch result.Response().(type) {
-		case error:
-			return nil, result.Response().(error)
-		default:
-			return result.Response(), nil
-		}
+	// if leader, do local
+	if n.IsLeader() {
+		return n.raftApplyLocalLeader(payload, timeout)
 	}
+	// otherwise, run on remote leader
+	// TODO: pass in timeout somehow and serialize in proto?
+	return n.raftApplyRemoteLeader(payload)
+}
 
-	response, err := ApplyOnLeader(n, payload)
+func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
+	if !n.IsLeader() {
+		return nil, errors.New("must be leader")
+	}
+	result := n.Raft.Apply(payload, timeout)
+	if result.Error() != nil {
+		return nil, result.Error()
+	}
+	switch result.Response().(type) {
+	case error:
+		return nil, result.Response().(error)
+	default:
+		return result.Response(), nil
+	}
+}
+
+func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
+	if !n.HasLeader() {
+		return nil, errors.New("unknown leader")
+	}
+	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
+	conn, err := ggrpc.Dial(string(n.Raft.Leader()), ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
 	if err != nil {
 		return nil, err
 	}
-	return response, nil
+	defer conn.Close()
+	client := localpb.NewRaftClient(conn)
+
+	response, err := client.ApplyLog(context.Background(), &localpb.ApplyLogRequest{Request: payload})
+	if err != nil {
+		return nil, err
+	}
+	result, err := n.Serializer.Deserialize(response.Response)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// IsLeader returns true if the current node is the cluster leader
+func (n *Node) IsLeader() bool {
+	return n.Raft.VerifyLeader().Error() == nil
+}
+
+// HasLeader returns true if the current node is aware of a cluster leader
+// including itself
+func (n *Node) HasLeader() bool {
+	return n.Raft.Leader() != ""
 }
 
 // newNodeID returns a random node ID of length `size`

@@ -83,6 +83,11 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler 
 	}
 }
 
+// GetDiscoveryPort returns the internal raft discovery port
+func (n *Node) GetDiscoveryPort() uint16 {
+	return uint16(n.node.DiscoveryPort)
+}
+
 // GetNodeID returns the current node's ID
 func (n *Node) GetNodeID() string {
 	return n.node.ID
@@ -279,13 +284,13 @@ func (n *Node) setPartition(partitionID uint32, nodeID string) error {
 
 // IsLeader returns true if the current node is the cluster leader
 func (n *Node) IsLeader() bool {
-	return n.node.Raft.VerifyLeader().Error() == nil
+	return n.node.IsLeader()
 }
 
 // HasLeader returns true if the current node is aware of a cluster leader
 // including itself
 func (n *Node) HasLeader() bool {
-	return n.node.Raft.Leader() != ""
+	return n.node.HasLeader()
 }
 
 // PartitionMappings returns a map of partition to node ID
