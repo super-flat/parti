@@ -1,4 +1,4 @@
-package node
+package raftwrapper
 
 import (
 	"errors"
@@ -9,7 +9,14 @@ import (
 
 type ProtoAnySerializer struct{}
 
+func NewProtoAnySerializer() *ProtoAnySerializer {
+	return &ProtoAnySerializer{}
+}
+
 func (p ProtoAnySerializer) Serialize(data proto.Message) ([]byte, error) {
+	if data == nil {
+		return nil, errors.New("cannot serialize empty proto data")
+	}
 	anyMsg, err := anypb.New(data)
 	if err != nil {
 		return nil, err
@@ -18,8 +25,11 @@ func (p ProtoAnySerializer) Serialize(data proto.Message) ([]byte, error) {
 }
 
 func (p ProtoAnySerializer) Deserialize(data []byte) (proto.Message, error) {
-	var anyMsg *anypb.Any
-	if err := proto.Unmarshal(data, anyMsg); err != nil {
+	if data == nil || len(data) == 0 {
+		return nil, errors.New("cannot deserialize empty bytes into proto")
+	}
+	var anyMsg anypb.Any
+	if err := proto.Unmarshal(data, &anyMsg); err != nil {
 		return nil, err
 	}
 	return anyMsg.UnmarshalNew()
@@ -37,9 +47,16 @@ func NewLegacySerializer() *LegacySerializer {
 
 // Serialize is used to serialize and data to a []byte
 func (l LegacySerializer) Serialize(data interface{}) ([]byte, error) {
+	if data == nil {
+		return nil, errors.New("empty data")
+	}
 	switch x := data.(type) {
 	case proto.Message:
-		return l.ser.Serialize(x)
+		result, err := l.ser.Serialize(x)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
 	default:
 		return nil, errors.New("unknown type")
 	}
@@ -47,5 +64,12 @@ func (l LegacySerializer) Serialize(data interface{}) ([]byte, error) {
 
 // Deserialize is used to deserialize []byte to interface{}
 func (l LegacySerializer) Deserialize(data []byte) (interface{}, error) {
-	return l.ser.Deserialize(data)
+	if len(data) == 0 {
+		return nil, errors.New("empty data")
+	}
+	result, err := l.ser.Deserialize(data)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

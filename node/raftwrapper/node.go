@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/grpc"
 	"github.com/ksrichard/easyraft/serializer"
 	ggrpc "google.golang.org/grpc"
@@ -44,7 +43,7 @@ type Node struct {
 }
 
 // NewNode returns an EasyRaft node
-func NewNode(raftPort, discoveryPort int, fsmService fsm.FSMService, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := newNodeID(6)
@@ -68,8 +67,8 @@ func NewNode(raftPort, discoveryPort int, fsmService fsm.FSMService, serializer 
 
 	// snapshot store that discards everything
 	// TODO: see if there's any reason not to use this inmem snapshot store
-	var snapshotStore raft.SnapshotStore
-	snapshotStore = raft.NewInmemSnapshotStore()
+	var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
+	// snapshotStore = raft.NewInmemSnapshotStore()
 	// snapshotStore = raft.NewDiscardSnapshotStore()
 
 	// grpc transport
@@ -81,17 +80,13 @@ func NewNode(raftPort, discoveryPort int, fsmService fsm.FSMService, serializer 
 		},
 	)
 
-	// init FSM
-	sm := fsm.NewRoutingFSM([]fsm.FSMService{fsmService})
-	sm.Init(serializer)
-
 	// memberlist config
 	mlConfig := memberlist.DefaultWANConfig()
 	mlConfig.BindPort = discoveryPort
 	mlConfig.Name = fmt.Sprintf("%s:%d", nodeId, raftPort)
 
 	// raft server
-	raftServer, err := raft.NewRaft(raftConf, sm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
+	raftServer, err := raft.NewRaft(raftConf, raftFsm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
 	if err != nil {
 		return nil, err
 	}
