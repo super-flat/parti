@@ -22,6 +22,7 @@ import (
 	"github.com/super-flat/parti/gen/localpb"
 	"github.com/super-flat/parti/node/raftwrapper"
 	"github.com/super-flat/parti/node/raftwrapper/fsm"
+	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	"github.com/super-flat/parti/node/rebalance"
 )
 
@@ -57,7 +58,7 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
 
-	ser := raftwrapper.NewLegacySerializer()
+	ser := serializer.NewProtoSerializer()
 
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
