@@ -46,14 +46,13 @@ type Node struct {
 	msgHandler Handler
 }
 
-func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir string, msgHandler Handler, partitionCount uint32) *Node {
+func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
 	fsmService := newInMemoryMapService()
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
 	node, err := partiraft.NewNode(
 		int(raftPort),
 		int(discoveryPort),
-		dataDir,
 		[]fsm2.Service{fsmService},
 		serializer.NewMsgPackSerializer(),
 		discoveryService,

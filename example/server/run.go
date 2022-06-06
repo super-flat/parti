@@ -27,7 +27,6 @@ func Run() {
 		cfg.RaftPort,
 		cfg.GrpcPort,
 		cfg.DiscoveryPort,
-		cfg.RaftDir,
 		handler,
 		numPartitions,
 	)

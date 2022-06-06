@@ -32,7 +32,6 @@ type Node struct {
 	RaftPort         int
 	DiscoveryPort    int
 	address          string
-	dataDir          string
 	Raft             *raft.Raft
 	GrpcServer       *grpc.Server
 	Discovery        discovery.Discovery
@@ -47,7 +46,7 @@ type Node struct {
 }
 
 // NewNode returns a Node instance
-func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.Service, serializer serializer.Serializer, discovery discovery.Discovery, snapshotEnabled bool) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, services []fsm.Service, serializer serializer.Serializer, discovery discovery.Discovery, snapshotEnabled bool) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := uid.New(50)
@@ -110,7 +109,6 @@ func NewNode(raftPort, discoveryPort int, dataDir string, services []fsm.Service
 		ID:               nodeId,
 		RaftPort:         raftPort,
 		address:          addr,
-		dataDir:          dataDir,
 		Raft:             raftServer,
 		TransportManager: grpcTransport,
 		Serializer:       serializer,
