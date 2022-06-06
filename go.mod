@@ -1,13 +1,16 @@
-module github.com/super-flat/raft-poc
+module github.com/super-flat/parti
 
 go 1.18
 
 require (
+	github.com/Jille/raft-grpc-transport v1.2.0
 	github.com/caarlos0/env/v6 v6.9.3
 	github.com/google/uuid v1.3.0
+	github.com/hashicorp/memberlist v0.3.1
 	github.com/hashicorp/raft v1.3.9
 	github.com/joho/godotenv v1.4.0
 	github.com/ksrichard/easyraft v1.0.0
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/spf13/cobra v1.4.0
 	github.com/troop-dev/go-kit v0.9.2
 	google.golang.org/grpc v1.47.0
@@ -15,10 +18,8 @@ require (
 )
 
 require (
-	github.com/Jille/raft-grpc-transport v1.2.0 // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -46,8 +47,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hashicorp/memberlist v0.3.1 // indirect
-	github.com/hashicorp/raft-boltdb v0.0.0-20220329195025-15018e9b97e0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -57,7 +56,6 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/miekg/dns v1.1.49 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -72,7 +70,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	github.com/zemirco/uid v0.0.0-20160129141151-3763f3c45832 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.32.0 // indirect
 	go.opentelemetry.io/otel v1.7.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.7.0 // indirect

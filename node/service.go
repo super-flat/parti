@@ -3,7 +3,7 @@ package node
 import (
 	"context"
 
-	"github.com/super-flat/raft-poc/gen/localpb"
+	"github.com/super-flat/parti/gen/localpb"
 	"github.com/troop-dev/go-kit/pkg/logging"
 	"google.golang.org/grpc"
 )

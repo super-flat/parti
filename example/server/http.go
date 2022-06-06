@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"

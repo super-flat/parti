@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/node"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )

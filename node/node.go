@@ -10,17 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/raft"
-	"github.com/ksrichard/easyraft"
+	hraft "github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/fsm"
+	easyraftfsm "github.com/ksrichard/easyraft/fsm"
 	"github.com/ksrichard/easyraft/serializer"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
 
-	"github.com/super-flat/raft-poc/gen/localpb"
-	"github.com/super-flat/raft-poc/node/rebalance"
+	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node/raftwrapper"
+	"github.com/super-flat/parti/node/raftwrapper/fsm"
+	"github.com/super-flat/parti/node/rebalance"
 )
 
 const (
@@ -31,7 +32,7 @@ const (
 type Node struct {
 	partitionCount uint32
 
-	node     *easyraft.Node
+	node     *raftwrapper.Node
 	nodeData *fsm.InMemoryMapService
 
 	mtx       *sync.RWMutex
@@ -42,24 +43,27 @@ type Node struct {
 	grpcPort   uint16
 	grpcServer grpcserver.Server
 
-	peerObservations <-chan raft.Observation
+	peerObservations <-chan hraft.Observation
 
 	msgHandler Handler
 }
 
-func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir string, msgHandler Handler, partitionCount uint32) *Node {
+func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
 	// EasyRaft Node
-	fsmService := newInMemoryMapService()
+	fsmService := fsm.NewInMemoryMapService()
+
+	// select discovery method
+	// TODO: make configurable (k8s, docker, etc)
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
-	node, err := easyraft.NewNode(
+
+	// instantiate the raft node
+	node, err := raftwrapper.NewNode(
 		int(raftPort),
 		int(discoveryPort),
-		dataDir,
-		[]fsm.FSMService{fsmService},
+		fsmService,
 		serializer.NewMsgPackSerializer(),
 		discoveryService,
-		false,
 	)
 	if err != nil {
 		panic(err)
@@ -146,16 +150,16 @@ func (n *Node) registerPeerObserver() {
 	if n.peerObservations != nil {
 		return
 	}
-	observerCh := make(chan raft.Observation, 100)
-	filterfn := func(o *raft.Observation) bool {
+	observerCh := make(chan hraft.Observation, 100)
+	filterfn := func(o *hraft.Observation) bool {
 		switch o.Data.(type) {
-		case raft.PeerObservation:
+		case hraft.PeerObservation:
 			return true
 		default:
 			return false
 		}
 	}
-	observer := raft.NewObserver(observerCh, true, raft.FilterFn(filterfn))
+	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterfn))
 	n.node.Raft.RegisterObserver(observer)
 	n.peerObservations = observerCh
 }
@@ -184,7 +188,7 @@ func (n *Node) handleShareGrpcPort() {
 
 func (n *Node) handlePeerObservations() {
 	for observation := range n.peerObservations {
-		peerObservation, ok := observation.Data.(raft.PeerObservation)
+		peerObservation, ok := observation.Data.(hraft.PeerObservation)
 		if ok && n.IsLeader() {
 			if peerObservation.Removed {
 				// remove from the list of ports
@@ -382,20 +386,20 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 }
 
 func RaftDeleteValue(n *Node, group string, key string) error {
-	request := fsm.MapRemoveRequest{MapName: group, Key: key}
+	request := easyraftfsm.MapRemoveRequest{MapName: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftPutValue(n *Node, group string, key string, value interface{}) error {
-	request := fsm.MapPutRequest{MapName: group, Key: key, Value: value}
+	request := easyraftfsm.MapPutRequest{MapName: group, Key: key, Value: value}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
 	result, err := n.node.RaftApply(
-		fsm.MapGetRequest{MapName: group, Key: key},
+		easyraftfsm.MapGetRequest{MapName: group, Key: key},
 		time.Second,
 	)
 	var output T
@@ -444,12 +448,6 @@ func raftGetStringLocally(n *Node, group string, key string) (string, error) {
 		return "", fmt.Errorf("could not deserialize value '%v'", value)
 	}
 	return outputTyped, nil
-}
-
-// newInMemoryMapService copies the built in constructor but explicitly
-// returns the struct instead of the interface...
-func newInMemoryMapService() *fsm.InMemoryMapService {
-	return &fsm.InMemoryMapService{Maps: map[string]*fsm.Map{}}
 }
 
 type Peer struct {

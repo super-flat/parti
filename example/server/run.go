@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/super-flat/raft-poc/node"
+	"github.com/super-flat/parti/node"
 )
 
 func Run() {
@@ -27,7 +27,6 @@ func Run() {
 		cfg.RaftPort,
 		cfg.GrpcPort,
 		cfg.DiscoveryPort,
-		cfg.RaftDir,
 		handler,
 		numPartitions,
 	)

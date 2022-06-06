@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/super-flat/raft-poc/example/cmd"
+	"github.com/super-flat/parti/example/cmd"
 )
 
 func main() {
