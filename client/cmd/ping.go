@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	grpcclient "github.com/super-flat/parti/grpc/client"
+
 	"github.com/spf13/cobra"
 	partipb "github.com/super-flat/parti/gen/parti"
-	grpcclient "github.com/super-flat/parti/pkg/grpc/client"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -24,8 +25,7 @@ var pingCMD = &cobra.Command{
 		grpcAddr, _ := cmd.Flags().GetString("addr")
 		partition, _ := cmd.Flags().GetUint32("partition")
 
-		conn, err := grpcclient.
-			NewBuilder().
+		conn, err := grpcclient.NewBuilder().
 			WithInsecure().
 			GetConn(cmd.Context(), grpcAddr)
 

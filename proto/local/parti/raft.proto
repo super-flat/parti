@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package parti.v1;
+
+service RaftService {
+  rpc ApplyLog(ApplyLogRequest) returns (ApplyLogResponse) {}
+  rpc GetDetails(GetDetailsRequest) returns (GetDetailsResponse) {}
+}
+
+message GetDetailsRequest {}
+
+message GetDetailsResponse {
+  string serverId = 1;
+  int32 discoveryPort = 2;
+}
+
+message ApplyLogRequest {
+  bytes request = 1;
+}
+
+message ApplyLogResponse {
+  bytes response = 1;
+}

@@ -10,9 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/super-flat/parti/logging"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/super-flat/parti/pkg/logging"
 )
 
 const (

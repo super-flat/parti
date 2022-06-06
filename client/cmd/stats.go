@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	grpcclient "github.com/super-flat/parti/grpc/client"
+
 	"github.com/spf13/cobra"
 	partipb "github.com/super-flat/parti/gen/parti"
-	grpcclient "github.com/super-flat/parti/pkg/grpc/client"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -20,8 +21,7 @@ var statsCMD = &cobra.Command{
 	Short: "get node stats",
 	Run: func(cmd *cobra.Command, args []string) {
 		grpcAddr, _ := cmd.Flags().GetString("addr")
-		conn, err := grpcclient.
-			NewBuilder().
+		conn, err := grpcclient.NewBuilder().
 			WithInsecure().
 			GetConn(cmd.Context(), grpcAddr)
 

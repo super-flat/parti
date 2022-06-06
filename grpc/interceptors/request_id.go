@@ -3,8 +3,9 @@ package interceptors
 import (
 	"context"
 
+	"github.com/super-flat/parti/requestid"
+
 	"github.com/google/uuid"
-	"github.com/super-flat/parti/pkg/requestid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

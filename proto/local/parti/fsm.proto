@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package parti.v1;
+
+import "google/protobuf/any.proto";
+
+message FsmPutRequest {
+  string group = 1;
+  string key = 2;
+  google.protobuf.Any value = 3;
+}
+
+message FsmGetRequest {
+  string group = 1;
+  string key = 2;
+}
+
+message FsmRemoveRequest {
+  string group = 1;
+  string key = 2;
+}
+
+message FsmGroup {
+  map<string, google.protobuf.Any> data = 1;
+}
+
+message FsmGroups {
+  map<string, FsmGroup> groups = 1;
+}

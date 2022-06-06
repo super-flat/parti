@@ -7,11 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/super-flat/parti/grpc/metrics"
+	"github.com/super-flat/parti/grpc/traces"
+	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/prometheus"
+
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/pkg/grpc/metrics"
-	"github.com/super-flat/parti/pkg/grpc/traces"
-	"github.com/super-flat/parti/pkg/logging"
-	"github.com/super-flat/parti/pkg/prometheus"
 	"google.golang.org/grpc"
 )
 

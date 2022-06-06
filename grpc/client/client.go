@@ -8,8 +8,7 @@ import (
 	"time"
 
 	grpcMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	"github.com/super-flat/parti/pkg/grpc/interceptors"
-	"github.com/super-flat/parti/pkg/logging"
+	interceptors2 "github.com/super-flat/parti/grpc/interceptors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -104,18 +103,18 @@ func (b *Builder) WithClientTransportCredentials(insecureSkipVerify bool, certPo
 // WithDefaultUnaryInterceptors sets the default unary interceptors for the grpc server
 func (b *Builder) WithDefaultUnaryInterceptors() *Builder {
 	return b.WithUnaryInterceptors(
-		interceptors.NewRequestIDUnaryClientInterceptor(),
-		interceptors.NewTracingClientUnaryInterceptor(),
-		interceptors.NewClientMetricUnaryInterceptor(),
+		interceptors2.NewRequestIDUnaryClientInterceptor(),
+		interceptors2.NewTracingClientUnaryInterceptor(),
+		interceptors2.NewClientMetricUnaryInterceptor(),
 	)
 }
 
 // WithDefaultStreamInterceptors sets the default stream interceptors for the grpc server
 func (b *Builder) WithDefaultStreamInterceptors() *Builder {
 	return b.WithStreamInterceptors(
-		interceptors.NewRequestIDStreamClientInterceptor(),
-		interceptors.NewTracingClientStreamInterceptor(),
-		interceptors.NewClientMetricStreamInterceptor(),
+		interceptors2.NewRequestIDStreamClientInterceptor(),
+		interceptors2.NewTracingClientStreamInterceptor(),
+		interceptors2.NewClientMetricStreamInterceptor(),
 	)
 }
 
@@ -124,7 +123,6 @@ func (b *Builder) GetConn(ctx context.Context, addr string) (*grpc.ClientConn, e
 	if addr == "" {
 		return nil, fmt.Errorf("target connection parameter missing. address = %s", addr)
 	}
-	logging.Debugf("Target to connect = %s", addr)
 	cc, err := grpc.DialContext(ctx, addr, b.options...)
 
 	if err != nil {

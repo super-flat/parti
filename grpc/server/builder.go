@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	interceptors2 "github.com/super-flat/parti/grpc/interceptors"
+	"github.com/super-flat/parti/grpc/traces"
+	"github.com/super-flat/parti/prometheus"
+
 	grpcMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	"github.com/super-flat/parti/pkg/grpc/interceptors"
-	"github.com/super-flat/parti/pkg/grpc/traces"
-	"github.com/super-flat/parti/pkg/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
@@ -182,20 +183,20 @@ func (sb *Builder) WithTLSCert(cert *tls.Certificate) *Builder {
 // WithDefaultUnaryInterceptors sets the default unary interceptors for the grpc grpcServer
 func (sb *Builder) WithDefaultUnaryInterceptors() *Builder {
 	return sb.WithUnaryInterceptors(
-		interceptors.NewRequestIDUnaryServerInterceptor(),
-		interceptors.NewTracingUnaryInterceptor(),
-		interceptors.NewMetricUnaryInterceptor(),
-		interceptors.NewRecoveryUnaryInterceptor(),
+		interceptors2.NewRequestIDUnaryServerInterceptor(),
+		interceptors2.NewTracingUnaryInterceptor(),
+		interceptors2.NewMetricUnaryInterceptor(),
+		interceptors2.NewRecoveryUnaryInterceptor(),
 	)
 }
 
 // WithDefaultStreamInterceptors sets the default stream interceptors for the grpc grpcServer
 func (sb *Builder) WithDefaultStreamInterceptors() *Builder {
 	return sb.WithStreamInterceptors(
-		interceptors.NewRequestIDStreamServerInterceptor(),
-		interceptors.NewTracingStreamInterceptor(),
-		interceptors.NewMetricStreamInterceptor(),
-		interceptors.NewRecoveryStreamInterceptor(),
+		interceptors2.NewRequestIDStreamServerInterceptor(),
+		interceptors2.NewTracingStreamInterceptor(),
+		interceptors2.NewMetricStreamInterceptor(),
+		interceptors2.NewRecoveryStreamInterceptor(),
 	)
 }
 

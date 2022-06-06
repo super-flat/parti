@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	"github.com/ksrichard/easyraft"
-	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/fsm"
-	"github.com/ksrichard/easyraft/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
 	partipb "github.com/super-flat/parti/gen/parti"
-	"github.com/super-flat/parti/pkg/grpc/client"
-	"github.com/super-flat/parti/pkg/grpc/server"
-	"github.com/super-flat/parti/pkg/logging"
+	"github.com/super-flat/parti/grpc/client"
+	grpcserver "github.com/super-flat/parti/grpc/server"
+	"github.com/super-flat/parti/logging"
+	raft2 "github.com/super-flat/parti/raft"
+	"github.com/super-flat/parti/raft/discovery"
+	"github.com/super-flat/parti/raft/fsm"
+	"github.com/super-flat/parti/raft/serializer"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 type Node struct {
 	partitionCount uint32
 
-	node     *easyraft.Node
+	node     *raft2.Node
 	nodeData *fsm.InMemoryMapService
 
 	mtx       *sync.RWMutex
@@ -39,7 +39,7 @@ type Node struct {
 	stoppedCh chan interface{}
 
 	grpcPort   uint16
-	grpcServer server.Server
+	grpcServer grpcserver.Server
 
 	peerObservations <-chan raft.Observation
 
@@ -47,15 +47,14 @@ type Node struct {
 }
 
 func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, dataDir string, msgHandler Handler, partitionCount uint32) *Node {
-	// EasyRaft Node
 	fsmService := newInMemoryMapService()
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
-	node, err := easyraft.NewNode(
+	node, err := raft2.NewNode(
 		int(raftPort),
 		int(discoveryPort),
 		dataDir,
-		[]fsm.FSMService{fsmService},
+		[]fsm.Service{fsmService},
 		serializer.NewMsgPackSerializer(),
 		discoveryService,
 		false,
@@ -108,16 +107,14 @@ func (n *Node) Start(ctx context.Context) error {
 	n.stoppedCh = stoppedCh
 
 	// create the grpc server
-	// grpc server
 	clusteringServer := NewClusteringService(n)
-	grpcServer, err := server.
-		NewServerBuilder().
+	grpcServer, err := grpcserver.NewServerBuilder().
 		WithReflection(false).
 		// WithDefaultUnaryInterceptors().
 		// WithDefaultStreamInterceptors().
 		WithTracingEnabled(false).
 		// WithTraceURL("").
-		WithServiceName("easyraft").
+		WithServiceName("partiraft").
 		WithMetricsEnabled(false).
 		// WithMetricsPort(0).
 		WithPort(int(n.grpcPort)).

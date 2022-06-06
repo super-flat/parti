@@ -2,7 +2,7 @@ package interceptors
 
 import (
 	grpcRecovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	"github.com/super-flat/parti/pkg/logging"
+	"github.com/super-flat/parti/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
