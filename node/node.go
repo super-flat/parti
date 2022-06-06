@@ -12,11 +12,12 @@ import (
 
 	hraft "github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	easyraftfsm "github.com/ksrichard/easyraft/fsm"
-	"github.com/ksrichard/easyraft/serializer"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/super-flat/parti/gen/localpb"
 	"github.com/super-flat/parti/node/raftwrapper"
@@ -33,7 +34,7 @@ type Node struct {
 	partitionCount uint32
 
 	node     *raftwrapper.Node
-	nodeData *fsm.InMemoryMapService
+	nodeData *fsm.ProtoFsm
 
 	mtx       *sync.RWMutex
 	isStarted bool
@@ -49,20 +50,23 @@ type Node struct {
 }
 
 func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
-	// EasyRaft Node
-	fsmService := fsm.NewInMemoryMapService()
+	// raft fsm
+	// fsmService := fsm.NewInMemoryMapService()
+	raftFsm := fsm.NewProtoFsm()
 
 	// select discovery method
 	// TODO: make configurable (k8s, docker, etc)
 	discoveryService := discovery.NewMDNSDiscovery()
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
 
+	ser := raftwrapper.NewLegacySerializer()
+
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
 		int(raftPort),
 		int(discoveryPort),
-		fsmService,
-		serializer.NewMsgPackSerializer(),
+		raftFsm,
+		ser,
 		discoveryService,
 	)
 	if err != nil {
@@ -71,7 +75,7 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler 
 
 	return &Node{
 		node:           node,
-		nodeData:       fsmService,
+		nodeData:       raftFsm,
 		mtx:            &sync.RWMutex{},
 		isStarted:      false,
 		grpcPort:       grpcPort,
@@ -135,8 +139,8 @@ func (n *Node) Start(ctx context.Context) error {
 	n.grpcServer = grpcServer
 	n.grpcServer.Start(ctx)
 
-	n.registerPeerObserver()
 	// handle peer observations
+	n.registerPeerObserver()
 	go n.handlePeerObservations()
 	// do node things
 	go n.handleShareGrpcPort()
@@ -169,17 +173,12 @@ func (n *Node) handleShareGrpcPort() {
 	for {
 		time.Sleep(time.Second * 1)
 		if n.HasLeader() {
-			// first try to read port data locally
-			port, err := RaftGetLocally[uint16](n, portsGroupName, n.GetNodeID())
-			if err != nil || port == 0 {
-				// if not found, get from leader
-				port, err = RaftGetFromLeader[uint16](n, portsGroupName, n.GetNodeID())
-				if err == nil && port == 0 {
-					// if not found, send to leader
-					err := RaftPutValue(n, portsGroupName, n.node.ID, uint16(n.grpcPort))
-					if err != nil {
-						logging.Errorf("failed to share gRPC port, %v", err)
-					}
+			// try to read grpc port from leader
+			port, err := RaftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
+			if err != nil || port.GetValue() == 0 {
+				// if not found, send to leader
+				if err := n.setPeerPort(n.GetNodeID(), n.grpcPort); err != nil {
+					logging.Errorf("failed to share gRPC port, %v", err)
 				}
 			}
 		}
@@ -207,7 +206,7 @@ func (n *Node) leaderRebalance() {
 			// get current partitions
 			currentPartitions := make(map[uint32]string, n.partitionCount)
 			for partition := uint32(0); partition < n.partitionCount; partition++ {
-				owner, err := n.getPartitionNode(uint32(partition))
+				owner, err := n.getPartitionNode(partition)
 				if err != nil {
 					log.Default().Printf("failed to get owner, partition=%d, %v", partition, err)
 				}
@@ -226,7 +225,7 @@ func (n *Node) leaderRebalance() {
 			}
 			// compute rebalance
 			rebalancedOutput := rebalance.ComputeRebalance(n.partitionCount, currentPartitions, activePeerIDs)
-
+			// apply any rebalance changes to the cluster
 			for partitionID, newPeerID := range rebalancedOutput {
 				currentPeerID, isMapped := currentPartitions[partitionID]
 				if !isMapped || currentPeerID != newPeerID {
@@ -237,15 +236,32 @@ func (n *Node) leaderRebalance() {
 	}
 }
 
-func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
-	key := strconv.FormatUint(uint64(partitionID), 10)
-	return RaftGetLocally[string](n, partitionsGroupName, key)
+func (n *Node) getPeerPortFromLeader(peerID string) (uint16, error) {
+	port, err := RaftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
+	return uint16(port.GetValue()), err
 }
 
-func (n *Node) setPartition(id uint32, nodeID string) error {
-	fmt.Printf("assigning partition %d to node %s\n", id, nodeID)
-	key := strconv.FormatUint(uint64(id), 10)
-	return RaftPutValue(n, partitionsGroupName, key, nodeID)
+func (n *Node) getPeerPortLocally(peerID string) (uint16, error) {
+	val, err := RaftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
+	return uint16(val.GetValue()), err
+}
+
+func (n *Node) setPeerPort(peerID string, port uint16) error {
+	value := wrapperspb.UInt32(uint32(port))
+	return RaftPutValue(n, portsGroupName, peerID, value)
+}
+
+func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
+	key := strconv.FormatUint(uint64(partitionID), 10)
+	val, err := RaftGetLocally[*wrapperspb.StringValue](n, partitionsGroupName, key)
+	return val.GetValue(), err
+}
+
+func (n *Node) setPartition(partitinID uint32, nodeID string) error {
+	fmt.Printf("assigning partition (%d) to node (%s)\n", partitinID, nodeID)
+	key := strconv.FormatUint(uint64(partitinID), 10)
+	value := wrapperspb.String(nodeID)
+	return RaftPutValue(n, partitionsGroupName, key, value)
 }
 
 func (n *Node) IsLeader() bool {
@@ -345,7 +361,7 @@ func (n *Node) getPeers() []*Peer {
 	if cfg := n.node.Raft.GetConfiguration(); cfg.Error() == nil {
 		for _, server := range cfg.Configuration().Servers {
 			peerID := string(server.ID)
-			grpcPort, _ := RaftGetLocally[uint16](n, portsGroupName, peerID)
+			grpcPort, _ := n.getPeerPortLocally(peerID)
 			peer := NewPeer(string(server.ID), string(server.Address), grpcPort)
 			peers[peer.ID] = peer
 		}
@@ -378,7 +394,7 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 	if raftAddr == "" {
 		return nil, errors.New("could not find raft peer")
 	}
-	grpcPort, err := RaftGetLocally[uint16](n, portsGroupName, peerID)
+	grpcPort, err := n.getPeerPortLocally(peerID)
 	if err != nil {
 		return nil, err
 	}
@@ -386,38 +402,40 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 }
 
 func RaftDeleteValue(n *Node, group string, key string) error {
-	request := easyraftfsm.MapRemoveRequest{MapName: group, Key: key}
+	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
-func RaftPutValue(n *Node, group string, key string, value interface{}) error {
-	request := easyraftfsm.MapPutRequest{MapName: group, Key: key, Value: value}
-	_, err := n.node.RaftApply(request, time.Second)
+func RaftPutValue(n *Node, group string, key string, value proto.Message) error {
+	anyVal, err := anypb.New(value)
+	if err != nil {
+		return err
+	}
+	request := &localpb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
+	_, err = n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
-	result, err := n.node.RaftApply(
-		easyraftfsm.MapGetRequest{MapName: group, Key: key},
-		time.Second,
-	)
+	request := &localpb.FsmGetRequest{Group: group, Key: key}
+	result, err := n.node.RaftApply(request, time.Second)
 	var output T
 	if err != nil || result == nil {
 		return output, err
 	}
 	resultTyped, ok := result.(T)
 	if !ok {
-		return output, fmt.Errorf("bad value type, '%v'", resultTyped)
+		return output, fmt.Errorf("bad value type, '%T' '%v'", result, result)
 	}
 	return resultTyped, nil
 }
 
 func RaftGetLocally[T any](n *Node, group string, key string) (T, error) {
 	var output T
-	value := n.nodeData.Get(group, key)
-	if value == nil {
-		return output, nil
+	value, err := n.nodeData.Get(group, key)
+	if err != nil || value == nil {
+		return output, err
 	}
 	outputTyped, ok := value.(T)
 	if !ok {
@@ -426,29 +444,29 @@ func RaftGetLocally[T any](n *Node, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
-func raftGetIntLocally(n *Node, group string, key string) (int, error) {
-	value := n.nodeData.Get(group, key)
-	if value == nil {
-		return 0, nil
-	}
-	outputTyped, ok := value.(int)
-	if !ok {
-		return 0, fmt.Errorf("could not deserialize value '%v'", value)
-	}
-	return outputTyped, nil
-}
+// func raftGetIntLocally(n *Node, group string, key string) (int, error) {
+// 	value := n.nodeData.Get(group, key)
+// 	if value == nil {
+// 		return 0, nil
+// 	}
+// 	outputTyped, ok := value.(int)
+// 	if !ok {
+// 		return 0, fmt.Errorf("could not deserialize value '%v'", value)
+// 	}
+// 	return outputTyped, nil
+// }
 
-func raftGetStringLocally(n *Node, group string, key string) (string, error) {
-	value := n.nodeData.Get(group, key)
-	if value == nil {
-		return "", nil
-	}
-	outputTyped, ok := value.(string)
-	if !ok {
-		return "", fmt.Errorf("could not deserialize value '%v'", value)
-	}
-	return outputTyped, nil
-}
+// func raftGetStringLocally(n *Node, group string, key string) (string, error) {
+// 	value := n.nodeData.Get(group, key)
+// 	if value == nil {
+// 		return "", nil
+// 	}
+// 	outputTyped, ok := value.(string)
+// 	if !ok {
+// 		return "", fmt.Errorf("could not deserialize value '%v'", value)
+// 	}
+// 	return outputTyped, nil
+// }
 
 type Peer struct {
 	ID       string

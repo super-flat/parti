@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -32,6 +33,10 @@ func NewProtoFsm() *ProtoFsm {
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
 func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
+	if log == nil || log.Data == nil {
+		fmt.Println("Raft received nil log apply!")
+		return nil
+	}
 	switch log.Type {
 	case raft.LogCommand:
 		msg, err := p.ser.Deserialize(log.Data)
@@ -52,9 +57,14 @@ func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
 func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 	switch v := cmd.(type) {
 	case *localpb.FsmGetRequest:
-		return p.get(v.GetGroup(), v.GetKey())
+		output, err := p.Get(v.GetGroup(), v.GetKey())
+		return output, err
 	case *localpb.FsmPutRequest:
-		err := p.put(v.GetGroup(), v.GetKey(), v.GetValue())
+		value, err := v.GetValue().UnmarshalNew()
+		if err != nil {
+			return nil, err
+		}
+		err = p.put(v.GetGroup(), v.GetKey(), value)
 		return nil, err
 	case *localpb.FsmRemoveRequest:
 		p.remove(v.GetGroup(), v.GetKey())
@@ -88,8 +98,9 @@ func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
 	return errors.New("not implemented")
 }
 
-// get retrieves a value from the fsm storage
-func (p *ProtoFsm) get(group string, key string) (proto.Message, error) {
+// Get retrieves a value from the fsm storage
+// TODO: make local
+func (p *ProtoFsm) Get(group string, key string) (proto.Message, error) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	if groupMap, ok := p.data[group]; ok {
