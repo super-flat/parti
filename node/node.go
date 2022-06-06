@@ -84,10 +84,12 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler 
 	}
 }
 
+// GetNodeID returns the current node's ID
 func (n *Node) GetNodeID() string {
 	return n.node.ID
 }
 
+// Stop shuts down this node
 func (n *Node) Stop(ctx context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -103,6 +105,7 @@ func (n *Node) Stop(ctx context.Context) {
 	n.isStarted = false
 }
 
+// Start the cluster node
 func (n *Node) Start(ctx context.Context) error {
 	// acquire lock to ensure node is only started once
 	n.mtx.Lock()
@@ -150,6 +153,8 @@ func (n *Node) Start(ctx context.Context) error {
 	return nil
 }
 
+// registerPeerObserver adds an `observer` to the raft cluster that receives
+// any PeerObservation changes and forwards them to a channel
 func (n *Node) registerPeerObserver() {
 	if n.peerObservations != nil {
 		return
@@ -175,9 +180,9 @@ func (n *Node) handleShareGrpcPort() {
 		if n.HasLeader() {
 			// try to read grpc port from leader
 			port, err := n.getPeerPortFromLeader(n.GetNodeID())
-			if err != nil || port == 0 {
+			if err != nil || port != n.grpcPort {
 				// if not found, send to leader
-				if err := n.setPeerPort(n.GetNodeID(), n.grpcPort); err != nil {
+				if err := n.setPeerPortOnLeader(); err != nil {
 					logging.Errorf("failed to share gRPC port, %v", err)
 				}
 			}
@@ -185,6 +190,7 @@ func (n *Node) handleShareGrpcPort() {
 	}
 }
 
+// handlePeerObservations handles inbound peer observations from raft
 func (n *Node) handlePeerObservations() {
 	for observation := range n.peerObservations {
 		peerObservation, ok := observation.Data.(hraft.PeerObservation)
@@ -199,6 +205,9 @@ func (n *Node) handlePeerObservations() {
 	}
 }
 
+// leaderRebalance allows the leader node to delegate partitions to its
+// cluster peers, considering nodes that have left and new nodes that
+// have joined, with a goal of evenly distributring the work.
 func (n *Node) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
@@ -236,19 +245,22 @@ func (n *Node) leaderRebalance() {
 	}
 }
 
+// getPeerPortFromLeader queries the leader for the given peer's grpc port
 func (n *Node) getPeerPortFromLeader(peerID string) (uint16, error) {
 	port, err := RaftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
 	return uint16(port.GetValue()), err
 }
 
+// getPeerPortLocally queries the local FSM store for a peer's gRPC port
 func (n *Node) getPeerPortLocally(peerID string) (uint16, error) {
 	val, err := RaftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
 	return uint16(val.GetValue()), err
 }
 
-func (n *Node) setPeerPort(peerID string, port uint16) error {
-	value := wrapperspb.UInt32(uint32(port))
-	return RaftPutValue(n, portsGroupName, peerID, value)
+// setPeerPort sets current node's gRPC port on the leader
+func (n *Node) setPeerPortOnLeader() error {
+	value := wrapperspb.UInt32(uint32(n.grpcPort))
+	return RaftPutValue(n, portsGroupName, n.GetNodeID(), value)
 }
 
 func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
