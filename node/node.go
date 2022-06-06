@@ -197,9 +197,9 @@ func (n *Node) handlePeerObservations() {
 		if ok && n.IsLeader() {
 			if peerObservation.Removed {
 				// remove from the list of ports
-				RaftDeleteValue(n, portsGroupName, string(peerObservation.Peer.ID))
+				raftDeleteValue(n, portsGroupName, string(peerObservation.Peer.ID))
 				// remove from the list of partitions
-				RaftDeleteValue(n, partitionsGroupName, string(peerObservation.Peer.ID))
+				raftDeleteValue(n, partitionsGroupName, string(peerObservation.Peer.ID))
 			}
 		}
 	}
@@ -247,43 +247,49 @@ func (n *Node) leaderRebalance() {
 
 // getPeerPortFromLeader queries the leader for the given peer's grpc port
 func (n *Node) getPeerPortFromLeader(peerID string) (uint16, error) {
-	port, err := RaftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
+	port, err := raftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
 	return uint16(port.GetValue()), err
 }
 
 // getPeerPortLocally queries the local FSM store for a peer's gRPC port
 func (n *Node) getPeerPortLocally(peerID string) (uint16, error) {
-	val, err := RaftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
+	val, err := raftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
 	return uint16(val.GetValue()), err
 }
 
-// setPeerPort sets current node's gRPC port on the leader
+// setPeerPortOnLeader sets current node's gRPC port on the leader
 func (n *Node) setPeerPortOnLeader() error {
 	value := wrapperspb.UInt32(uint32(n.grpcPort))
-	return RaftPutValue(n, portsGroupName, n.GetNodeID(), value)
+	return raftPutValue(n, portsGroupName, n.GetNodeID(), value)
 }
 
+// getPartitionNode returns the node that owns a partition
 func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
 	key := strconv.FormatUint(uint64(partitionID), 10)
-	val, err := RaftGetLocally[*wrapperspb.StringValue](n, partitionsGroupName, key)
+	val, err := raftGetLocally[*wrapperspb.StringValue](n, partitionsGroupName, key)
 	return val.GetValue(), err
 }
 
-func (n *Node) setPartition(partitinID uint32, nodeID string) error {
-	fmt.Printf("assigning partition (%d) to node (%s)\n", partitinID, nodeID)
-	key := strconv.FormatUint(uint64(partitinID), 10)
+// setPartition assigns a partition to a node
+func (n *Node) setPartition(partitionID uint32, nodeID string) error {
+	fmt.Printf("assigning partition (%d) to node (%s)\n", partitionID, nodeID)
+	key := strconv.FormatUint(uint64(partitionID), 10)
 	value := wrapperspb.String(nodeID)
-	return RaftPutValue(n, partitionsGroupName, key, value)
+	return raftPutValue(n, partitionsGroupName, key, value)
 }
 
+// IsLeader returns true if the current node is the cluster leader
 func (n *Node) IsLeader() bool {
 	return n.node.Raft.VerifyLeader().Error() == nil
 }
 
+// HasLeader returns true if the current node is aware of a cluster leader
+// including itself
 func (n *Node) HasLeader() bool {
 	return n.node.Raft.Leader() != ""
 }
 
+// PartitionMappings returns a map of partition to node ID
 func (n *Node) PartitionMappings() map[uint32]string {
 	output := map[uint32]string{}
 	var partition uint32
@@ -296,6 +302,7 @@ func (n *Node) PartitionMappings() map[uint32]string {
 	return output
 }
 
+// Send a message to the node that owns a partition
 func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
@@ -328,6 +335,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 	return peer.GetClient(ctx).Send(ctx, request)
 }
 
+// Ping a partition and receive a response from the node that owns it
 func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
@@ -360,6 +368,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 	return resp, nil
 }
 
+// getPeerSelf returns a Peer for the current node
 func (n *Node) getPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.node.RaftPort)
@@ -413,13 +422,13 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 	return NewPeer(peerID, raftAddr, grpcPort), nil
 }
 
-func RaftDeleteValue(n *Node, group string, key string) error {
+func raftDeleteValue(n *Node, group string, key string) error {
 	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
 
-func RaftPutValue(n *Node, group string, key string, value proto.Message) error {
+func raftPutValue(n *Node, group string, key string, value proto.Message) error {
 	anyVal, err := anypb.New(value)
 	if err != nil {
 		return err
@@ -429,7 +438,7 @@ func RaftPutValue(n *Node, group string, key string, value proto.Message) error 
 	return err
 }
 
-func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
+func raftGetFromLeader[T any](n *Node, group, key string) (T, error) {
 	request := &localpb.FsmGetRequest{Group: group, Key: key}
 	result, err := n.node.RaftApply(request, time.Second)
 	var output T
@@ -443,7 +452,7 @@ func RaftGetFromLeader[T any](n *Node, group, key string) (T, error) {
 	return resultTyped, nil
 }
 
-func RaftGetLocally[T any](n *Node, group string, key string) (T, error) {
+func raftGetLocally[T any](n *Node, group string, key string) (T, error) {
 	var output T
 	value, err := n.nodeData.Get(group, key)
 	if err != nil || value == nil {
