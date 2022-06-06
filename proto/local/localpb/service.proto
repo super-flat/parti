@@ -18,11 +18,11 @@ service Clustering {
 };
 
 message ApplyLogRequest {
-    repeated byte rqeuest = 1;
+    repeated bytes request = 1;
 }
 
 message ApplyLogResponse {
-    repeated byte response = 1;
+    repeated bytes response = 1;
 }
 
 message GetPeerDetailsRequest {}
