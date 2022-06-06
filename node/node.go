@@ -174,8 +174,8 @@ func (n *Node) handleShareGrpcPort() {
 		time.Sleep(time.Second * 1)
 		if n.HasLeader() {
 			// try to read grpc port from leader
-			port, err := RaftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
-			if err != nil || port.GetValue() == 0 {
+			port, err := n.getPeerPortFromLeader(n.GetNodeID())
+			if err != nil || port == 0 {
 				// if not found, send to leader
 				if err := n.setPeerPort(n.GetNodeID(), n.grpcPort); err != nil {
 					logging.Errorf("failed to share gRPC port, %v", err)
