@@ -444,30 +444,6 @@ func RaftGetLocally[T any](n *Node, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
-// func raftGetIntLocally(n *Node, group string, key string) (int, error) {
-// 	value := n.nodeData.Get(group, key)
-// 	if value == nil {
-// 		return 0, nil
-// 	}
-// 	outputTyped, ok := value.(int)
-// 	if !ok {
-// 		return 0, fmt.Errorf("could not deserialize value '%v'", value)
-// 	}
-// 	return outputTyped, nil
-// }
-
-// func raftGetStringLocally(n *Node, group string, key string) (string, error) {
-// 	value := n.nodeData.Get(group, key)
-// 	if value == nil {
-// 		return "", nil
-// 	}
-// 	outputTyped, ok := value.(string)
-// 	if !ok {
-// 		return "", fmt.Errorf("could not deserialize value '%v'", value)
-// 	}
-// 	return outputTyped, nil
-// }
-
 type Peer struct {
 	ID       string
 	Host     string
