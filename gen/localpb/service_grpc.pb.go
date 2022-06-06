@@ -28,9 +28,6 @@ type ClusteringClient interface {
 	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error)
-	//
-	GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error)
-	ApplyLog(ctx context.Context, in *ApplyLogRequest, opts ...grpc.CallOption) (*ApplyLogResponse, error)
 }
 
 type clusteringClient struct {
@@ -68,24 +65,6 @@ func (c *clusteringClient) Send(ctx context.Context, in *SendRequest, opts ...gr
 	return out, nil
 }
 
-func (c *clusteringClient) GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error) {
-	out := new(GetPeerDetailsResponse)
-	err := c.cc.Invoke(ctx, "/local.Clustering/GetPeerDetails", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *clusteringClient) ApplyLog(ctx context.Context, in *ApplyLogRequest, opts ...grpc.CallOption) (*ApplyLogResponse, error) {
-	out := new(ApplyLogResponse)
-	err := c.cc.Invoke(ctx, "/local.Clustering/ApplyLog", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ClusteringServer is the server API for Clustering service.
 // All implementations should embed UnimplementedClusteringServer
 // for forward compatibility
@@ -96,9 +75,6 @@ type ClusteringServer interface {
 	Stats(context.Context, *StatsRequest) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(context.Context, *SendRequest) (*SendResponse, error)
-	//
-	GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error)
-	ApplyLog(context.Context, *ApplyLogRequest) (*ApplyLogResponse, error)
 }
 
 // UnimplementedClusteringServer should be embedded to have forward compatible implementations.
@@ -113,12 +89,6 @@ func (UnimplementedClusteringServer) Stats(context.Context, *StatsRequest) (*Sta
 }
 func (UnimplementedClusteringServer) Send(context.Context, *SendRequest) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Send not implemented")
-}
-func (UnimplementedClusteringServer) GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPeerDetails not implemented")
-}
-func (UnimplementedClusteringServer) ApplyLog(context.Context, *ApplyLogRequest) (*ApplyLogResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ApplyLog not implemented")
 }
 
 // UnsafeClusteringServer may be embedded to opt out of forward compatibility for this service.
@@ -186,42 +156,6 @@ func _Clustering_Send_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Clustering_GetPeerDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPeerDetailsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ClusteringServer).GetPeerDetails(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/local.Clustering/GetPeerDetails",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusteringServer).GetPeerDetails(ctx, req.(*GetPeerDetailsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Clustering_ApplyLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApplyLogRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ClusteringServer).ApplyLog(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/local.Clustering/ApplyLog",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusteringServer).ApplyLog(ctx, req.(*ApplyLogRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // Clustering_ServiceDesc is the grpc.ServiceDesc for Clustering service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -241,13 +175,129 @@ var Clustering_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Send",
 			Handler:    _Clustering_Send_Handler,
 		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "localpb/service.proto",
+}
+
+// RaftClient is the client API for Raft service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type RaftClient interface {
+	// GetPeerDetails returns the node ID and discovery port
+	GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error)
+	// ApplyLog applies the provided request on the server if it is the leader
+	ApplyLog(ctx context.Context, in *ApplyLogRequest, opts ...grpc.CallOption) (*ApplyLogResponse, error)
+}
+
+type raftClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
+	return &raftClient{cc}
+}
+
+func (c *raftClient) GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error) {
+	out := new(GetPeerDetailsResponse)
+	err := c.cc.Invoke(ctx, "/local.Raft/GetPeerDetails", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *raftClient) ApplyLog(ctx context.Context, in *ApplyLogRequest, opts ...grpc.CallOption) (*ApplyLogResponse, error) {
+	out := new(ApplyLogResponse)
+	err := c.cc.Invoke(ctx, "/local.Raft/ApplyLog", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RaftServer is the server API for Raft service.
+// All implementations should embed UnimplementedRaftServer
+// for forward compatibility
+type RaftServer interface {
+	// GetPeerDetails returns the node ID and discovery port
+	GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error)
+	// ApplyLog applies the provided request on the server if it is the leader
+	ApplyLog(context.Context, *ApplyLogRequest) (*ApplyLogResponse, error)
+}
+
+// UnimplementedRaftServer should be embedded to have forward compatible implementations.
+type UnimplementedRaftServer struct {
+}
+
+func (UnimplementedRaftServer) GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPeerDetails not implemented")
+}
+func (UnimplementedRaftServer) ApplyLog(context.Context, *ApplyLogRequest) (*ApplyLogResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyLog not implemented")
+}
+
+// UnsafeRaftServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to RaftServer will
+// result in compilation errors.
+type UnsafeRaftServer interface {
+	mustEmbedUnimplementedRaftServer()
+}
+
+func RegisterRaftServer(s grpc.ServiceRegistrar, srv RaftServer) {
+	s.RegisterService(&Raft_ServiceDesc, srv)
+}
+
+func _Raft_GetPeerDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPeerDetailsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).GetPeerDetails(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/local.Raft/GetPeerDetails",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).GetPeerDetails(ctx, req.(*GetPeerDetailsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Raft_ApplyLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).ApplyLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/local.Raft/ApplyLog",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).ApplyLog(ctx, req.(*ApplyLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Raft_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "local.Raft",
+	HandlerType: (*RaftServer)(nil),
+	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "GetPeerDetails",
-			Handler:    _Clustering_GetPeerDetails_Handler,
+			Handler:    _Raft_GetPeerDetails_Handler,
 		},
 		{
 			MethodName: "ApplyLog",
-			Handler:    _Clustering_ApplyLog_Handler,
+			Handler:    _Raft_ApplyLog_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
