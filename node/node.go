@@ -155,8 +155,6 @@ func (n *Node) Start(ctx context.Context) error {
 	// handle peer observations
 	n.registerPeerObserver()
 	go n.handlePeerObservations()
-	// do node things
-	// go n.handleShareGrpcPort()
 	// do leader things
 	go n.leaderRebalance()
 	n.isStarted = true
@@ -182,23 +180,6 @@ func (n *Node) registerPeerObserver() {
 	n.node.Raft.RegisterObserver(observer)
 	n.peerObservations = observerCh
 }
-
-// // handleShareGrpcPort ensures the raft cluster knows this node's gRPC port
-// func (n *Node) handleShareGrpcPort() {
-// 	for {
-// 		time.Sleep(time.Second * 1)
-// 		if n.HasLeader() {
-// 			// try to read grpc port from leader
-// 			port, err := n.getPeerPortFromLeader(n.GetNodeID())
-// 			if err != nil || port != n.grpcPort {
-// 				// if not found, send to leader
-// 				if err := n.setPeerPortOnLeader(); err != nil {
-// 					logging.Errorf("failed to share gRPC port, %v", err)
-// 				}
-// 			}
-// 		}
-// 	}
-// }
 
 // handlePeerObservations handles inbound peer observations from raft
 func (n *Node) handlePeerObservations() {
@@ -254,24 +235,6 @@ func (n *Node) leaderRebalance() {
 		}
 	}
 }
-
-// getPeerPortFromLeader queries the leader for the given peer's grpc port
-func (n *Node) getPeerPortFromLeader(peerID string) (uint16, error) {
-	port, err := raftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
-	return uint16(port.GetValue()), err
-}
-
-// getPeerPortLocally queries the local FSM store for a peer's gRPC port
-func (n *Node) getPeerPortLocally(peerID string) (uint16, error) {
-	val, err := raftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
-	return uint16(val.GetValue()), err
-}
-
-// // setPeerPortOnLeader sets current node's gRPC port on the leader
-// func (n *Node) setPeerPortOnLeader() error {
-// 	value := wrapperspb.UInt32(uint32(n.grpcPort))
-// 	return raftPutValue(n, portsGroupName, n.GetNodeID(), value)
-// }
 
 // getPartitionNode returns the node that owns a partition
 func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
