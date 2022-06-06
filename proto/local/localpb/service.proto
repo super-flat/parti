@@ -6,13 +6,31 @@ import "google/protobuf/any.proto";
 
 // Clustering service provides methods for comms between nodes
 service Clustering {
-    // Ping method is for testing node liveness
+    // Ping method contacts a node based on partition ID
     rpc Ping (PingRequest) returns (PingResponse);
     // Stats returns node stats
     rpc Stats(StatsRequest) returns (StatsResponse);
-
+    // Send forwards messages to nodes based on a partition ID
     rpc Send(SendRequest) returns (SendResponse);
+    //
+    rpc GetPeerDetails(GetPeerDetailsRequest) returns (GetPeerDetailsResponse);
+    rpc ApplyLog(ApplyLogRequest) returns (ApplyLogResponse);
 };
+
+message ApplyLogRequest {
+    repeated byte rqeuest = 1;
+}
+
+message ApplyLogResponse {
+    repeated byte response = 1;
+}
+
+message GetPeerDetailsRequest {}
+
+message GetPeerDetailsResponse {
+    string server_id = 1;
+    uint32 discovery_port = 2;
+}
 
 message PingRequest {
     uint32 partition_id = 1;

@@ -305,6 +305,17 @@ func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{
 	return response, nil
 }
 
+// IsLeader returns true if the current node is the cluster leader
+func (n *Node) IsLeader() bool {
+	return n.Raft.VerifyLeader().Error() == nil
+}
+
+// HasLeader returns true if the current node is aware of a cluster leader
+// including itself
+func (n *Node) HasLeader() bool {
+	return n.Raft.Leader() != ""
+}
+
 // newNodeID returns a random node ID of length `size`
 func newNodeID(size int) string {
 	// TODO, do we need to do this anymore?

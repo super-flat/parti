@@ -279,13 +279,13 @@ func (n *Node) setPartition(partitionID uint32, nodeID string) error {
 
 // IsLeader returns true if the current node is the cluster leader
 func (n *Node) IsLeader() bool {
-	return n.node.Raft.VerifyLeader().Error() == nil
+	return n.node.IsLeader()
 }
 
 // HasLeader returns true if the current node is aware of a cluster leader
 // including itself
 func (n *Node) HasLeader() bool {
-	return n.node.Raft.Leader() != ""
+	return n.node.HasLeader()
 }
 
 // PartitionMappings returns a map of partition to node ID
