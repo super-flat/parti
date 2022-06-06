@@ -1,6 +1,6 @@
-# raft-poc
+# parti
 
-This library implements cluster sharding on top of hashicorp raft. Send a message for a given partition to any node in the cluster, and the message will be forwarded to the node that owns that partition. The cluster will automatically rebalance as nodes are added and removed.
+Parti provides cluster sharding on top of hashicorp raft. Send a message for a given partition to any node in the cluster, and the message will be forwarded to the node that owns that partition. The cluster will automatically rebalance as nodes are added and removed.
 
 ### SAMPLE
 ```sh
