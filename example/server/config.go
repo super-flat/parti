@@ -4,9 +4,8 @@ import "github.com/caarlos0/env/v6"
 
 type Config struct {
 	HttpPort      uint16 `env:"HTTP_PORT" envDefault:"50000"`
-	GrpcPort      uint16 `env:"GRPC_PORT" envDefault:"50100"`
+	RaftPort      uint16 `env:"RAFT_PORT" envDefault:"50100"`
 	DiscoveryPort uint16 `env:"DISCOVERY_PORT" envDefault:"50200"`
-	RaftPort      uint16 `env:"RAFT_PORT" envDefault:"50300"`
 }
 
 // NewConfigFromEnv instantiates the server config from environment variables

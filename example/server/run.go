@@ -25,7 +25,6 @@ func Run() {
 	numPartitions := uint32(10)
 	partiNode := node.NewNode(
 		cfg.RaftPort,
-		cfg.GrpcPort,
 		cfg.DiscoveryPort,
 		handler,
 		numPartitions,
