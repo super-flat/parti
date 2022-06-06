@@ -1,22 +1,30 @@
 package fsm
 
 import (
+	"errors"
 	"io"
 	"sync"
 
 	"github.com/hashicorp/raft"
 	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node/raftwrapper"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type ProtoFsm struct {
 	data *localpb.FsmGroups
 	mtx  *sync.Mutex
+	ser  *raftwrapper.ProtoAnySerializer
 }
 
 func NewProtoFsm() *ProtoFsm {
 	return &ProtoFsm{
-		data: &localpb.FsmGroups{},
-		mtx:  &sync.Mutex{},
+		data: &localpb.FsmGroups{
+			Groups: make(map[string]*localpb.FsmGroup),
+		},
+		mtx: &sync.Mutex{},
+		ser: raftwrapper.NewProtoAnySerializer(),
 	}
 }
 
@@ -26,8 +34,38 @@ func NewProtoFsm() *ProtoFsm {
 // produce the same result on all peers in the cluster.
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
-func (p *ProtoFsm) Apply(*raft.Log) interface{} {
-	return nil
+func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
+	switch log.Type {
+	case raft.LogCommand:
+		msg, err := p.ser.Deserialize(log.Data)
+		if err != nil {
+			return err
+		}
+		// TODO: copied this from easyraft impl, but dont love it.
+		result, err := p.applyProtoCommand(msg)
+		if err != nil {
+			return err
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
+	switch v := cmd.(type) {
+	case *localpb.FsmGetRequest:
+		return p.get(v.GetGroup(), v.GetKey()), nil
+	case *localpb.FsmPutRequest:
+		p.put(v.GetGroup(), v.GetKey(), v.GetValue())
+		return nil, nil
+	case *localpb.FsmRemoveRequest:
+		p.remove(v.GetGroup(), v.GetKey())
+		return nil, nil
+	default:
+		// TODO: decide if this is the right design
+		return nil, errors.New("unknown request type")
+	}
 }
 
 // Snapshot returns an FSMSnapshot used to: support log compaction, to
@@ -43,14 +81,49 @@ func (p *ProtoFsm) Apply(*raft.Log) interface{} {
 // be called concurrently with FSMSnapshot.Persist. This means the FSM should
 // be implemented to allow for concurrent updates while a snapshot is happening.
 func (p *ProtoFsm) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, nil
+	return nil, errors.New("not implemented")
 }
 
 // Restore is used to restore an FSM from a snapshot. It is not called
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
 func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
+	return errors.New("not implemented")
+}
+
+// get retrieves a value from the fsm storage
+func (p *ProtoFsm) get(group string, key string) *anypb.Any {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if groupMap, ok := p.data.GetGroups()[group]; ok {
+		if value, ok := groupMap.GetData()[key]; ok {
+			return value
+		}
+	}
 	return nil
+}
+
+// put writes a record into the fsm storage
+func (p *ProtoFsm) put(group string, key string, data *anypb.Any) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	groupMap, groupExists := p.data.GetGroups()[group]
+	if !groupExists {
+		groupMap = &localpb.FsmGroup{
+			Data: make(map[string]*anypb.Any),
+		}
+		p.data.Groups[group] = groupMap
+	}
+	groupMap.Data[key] = data
+}
+
+// remove a key from storage
+func (p *ProtoFsm) remove(group, key string) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if groupMap, groupExists := p.data.GetGroups()[group]; groupExists {
+		delete(groupMap.GetData(), key)
+	}
 }
 
 var _ raft.FSM = &ProtoFsm{}

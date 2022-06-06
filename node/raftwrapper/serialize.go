@@ -1,4 +1,4 @@
-package node
+package raftwrapper
 
 import (
 	"errors"
@@ -8,6 +8,10 @@ import (
 )
 
 type ProtoAnySerializer struct{}
+
+func NewProtoAnySerializer() *ProtoAnySerializer {
+	return &ProtoAnySerializer{}
+}
 
 func (p ProtoAnySerializer) Serialize(data proto.Message) ([]byte, error) {
 	anyMsg, err := anypb.New(data)
