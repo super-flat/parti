@@ -46,25 +46,6 @@ func (c ClusteringService) Send(ctx context.Context, request *localpb.SendReques
 	return c.node.Send(ctx, request)
 }
 
-func (c ClusteringService) GetPeerDetails(context.Context, *localpb.GetPeerDetailsRequest) (*localpb.GetPeerDetailsResponse, error) {
-	return &localpb.GetPeerDetailsResponse{
-		ServerId:      c.node.GetNodeID(),
-		DiscoveryPort: uint32(c.node.GetDiscoveryPort()),
-	}, nil
-}
-
-func (c ClusteringService) ApplyLog(ctx context.Context, request *localpb.ApplyLogRequest) (*localpb.ApplyLogResponse, error) {
-	result, err := c.node.node.RaftApply(request.GetRequest(), 0)
-	if result.Error() != nil {
-		return nil, result.Error()
-	}
-	respPayload, err := s.Node.Serializer.Serialize(result.Response())
-	if err != nil {
-		return nil, err
-	}
-	return &rgrpc.ApplyResponse{Response: respPayload}, nil
-}
-
 func (c *ClusteringService) RegisterService(server *grpc.Server) {
 	localpb.RegisterClusteringServer(server, c)
 }

@@ -1,51 +1,43 @@
 package raftwrapper
 
-import (
-	"context"
-	"errors"
+// func ApplyOnLeader(node *Node, payload []byte) (interface{}, error) {
+// 	if node.Raft.Leader() == "" {
+// 		return nil, errors.New("unknown leader")
+// 	}
+// 	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
+// 	conn, err := ggrpc.Dial(string(node.Raft.Leader()), ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer conn.Close()
+// 	client := grpc.NewRaftClient(conn)
 
-	"github.com/ksrichard/easyraft/grpc"
-	ggrpc "google.golang.org/grpc"
-)
+// 	response, err := client.ApplyLog(context.Background(), &grpc.ApplyRequest{Request: payload})
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-func ApplyOnLeader(node *Node, payload []byte) (interface{}, error) {
-	if node.Raft.Leader() == "" {
-		return nil, errors.New("unknown leader")
-	}
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(string(node.Raft.Leader()), ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	client := grpc.NewRaftClient(conn)
+// 	result, err := node.Serializer.Deserialize(response.Response)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	response, err := client.ApplyLog(context.Background(), &grpc.ApplyRequest{Request: payload})
-	if err != nil {
-		return nil, err
-	}
+// 	return result, nil
+// }
 
-	result, err := node.Serializer.Deserialize(response.Response)
-	if err != nil {
-		return nil, err
-	}
+// func GetPeerDetails(address string) (*grpc.GetDetailsResponse, error) {
+// 	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
+// 	conn, err := ggrpc.Dial(address, ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer conn.Close()
+// 	client := grpc.NewRaftClient(conn)
 
-	return result, nil
-}
+// 	response, err := client.GetDetails(context.Background(), &grpc.GetDetailsRequest{})
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-func GetPeerDetails(address string) (*grpc.GetDetailsResponse, error) {
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(address, ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	client := grpc.NewRaftClient(conn)
-
-	response, err := client.GetDetails(context.Background(), &grpc.GetDetailsRequest{})
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
-}
+// 	return response, nil
+// }
