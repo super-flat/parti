@@ -9,22 +9,19 @@ import (
 	"github.com/super-flat/parti/gen/localpb"
 	"github.com/super-flat/parti/node/raftwrapper"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type ProtoFsm struct {
-	data *localpb.FsmGroups
+	data map[string]map[string]proto.Message
 	mtx  *sync.Mutex
 	ser  *raftwrapper.ProtoAnySerializer
 }
 
 func NewProtoFsm() *ProtoFsm {
 	return &ProtoFsm{
-		data: &localpb.FsmGroups{
-			Groups: make(map[string]*localpb.FsmGroup),
-		},
-		mtx: &sync.Mutex{},
-		ser: raftwrapper.NewProtoAnySerializer(),
+		data: make(map[string]map[string]proto.Message),
+		mtx:  &sync.Mutex{},
+		ser:  raftwrapper.NewProtoAnySerializer(),
 	}
 }
 
@@ -55,10 +52,10 @@ func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
 func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 	switch v := cmd.(type) {
 	case *localpb.FsmGetRequest:
-		return p.get(v.GetGroup(), v.GetKey()), nil
+		return p.get(v.GetGroup(), v.GetKey())
 	case *localpb.FsmPutRequest:
-		p.put(v.GetGroup(), v.GetKey(), v.GetValue())
-		return nil, nil
+		err := p.put(v.GetGroup(), v.GetKey(), v.GetValue())
+		return nil, err
 	case *localpb.FsmRemoveRequest:
 		p.remove(v.GetGroup(), v.GetKey())
 		return nil, nil
@@ -92,37 +89,45 @@ func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
 }
 
 // get retrieves a value from the fsm storage
-func (p *ProtoFsm) get(group string, key string) *anypb.Any {
+func (p *ProtoFsm) get(group string, key string) (proto.Message, error) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	if groupMap, ok := p.data.GetGroups()[group]; ok {
-		if value, ok := groupMap.GetData()[key]; ok {
-			return value
+	if groupMap, ok := p.data[group]; ok {
+		if record, ok := groupMap[key]; ok {
+			return record, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // put writes a record into the fsm storage
-func (p *ProtoFsm) put(group string, key string, data *anypb.Any) {
+func (p *ProtoFsm) put(group string, key string, data proto.Message) error {
+	if group == "" {
+		return errors.New("missing group")
+	}
+	if key == "" {
+		return errors.New("missing key")
+	}
+	if data == nil {
+		return errors.New("missing data")
+	}
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	groupMap, groupExists := p.data.GetGroups()[group]
+	groupMap, groupExists := p.data[group]
 	if !groupExists {
-		groupMap = &localpb.FsmGroup{
-			Data: make(map[string]*anypb.Any),
-		}
-		p.data.Groups[group] = groupMap
+		groupMap = make(map[string]proto.Message)
+		p.data[group] = groupMap
 	}
-	groupMap.Data[key] = data
+	groupMap[key] = data
+	return nil
 }
 
 // remove a key from storage
 func (p *ProtoFsm) remove(group, key string) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	if groupMap, groupExists := p.data.GetGroups()[group]; groupExists {
-		delete(groupMap.GetData(), key)
+	if groupMap, groupExists := p.data[group]; groupExists {
+		delete(groupMap, key)
 	}
 }
 
