@@ -51,7 +51,6 @@ type Node struct {
 
 func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
 	// raft fsm
-	// fsmService := fsm.NewInMemoryMapService()
 	raftFsm := fsm.NewProtoFsm()
 
 	// select discovery method
