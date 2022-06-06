@@ -83,6 +83,11 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler 
 	}
 }
 
+// GetDiscoveryPort returns the internal raft discovery port
+func (n *Node) GetDiscoveryPort() uint16 {
+	return uint16(n.node.DiscoveryPort)
+}
+
 // GetNodeID returns the current node's ID
 func (n *Node) GetNodeID() string {
 	return n.node.ID
