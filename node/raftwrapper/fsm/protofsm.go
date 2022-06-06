@@ -8,21 +8,21 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper"
+	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	"google.golang.org/protobuf/proto"
 )
 
 type ProtoFsm struct {
 	data map[string]map[string]proto.Message
 	mtx  *sync.Mutex
-	ser  *raftwrapper.ProtoAnySerializer
+	ser  *serializer.ProtoSerializer
 }
 
 func NewProtoFsm() *ProtoFsm {
 	return &ProtoFsm{
 		data: make(map[string]map[string]proto.Message),
 		mtx:  &sync.Mutex{},
-		ser:  raftwrapper.NewProtoAnySerializer(),
+		ser:  serializer.NewProtoSerializer(),
 	}
 }
 
@@ -39,7 +39,7 @@ func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
 	}
 	switch log.Type {
 	case raft.LogCommand:
-		msg, err := p.ser.Deserialize(log.Data)
+		msg, err := p.ser.DeserializeProto(log.Data)
 		if err != nil {
 			return err
 		}

@@ -18,8 +18,8 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
 	"github.com/ksrichard/easyraft/discovery"
-	"github.com/ksrichard/easyraft/serializer"
 	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -225,19 +225,19 @@ func (n *Node) Stop() {
 
 // handleDiscoveredNodes handles the discovered Node additions
 func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
-	for peer := range discoveryChan {
-		detailsResp, err := n.getPeerDetails(peer)
+	for peerAddr := range discoveryChan {
+		detailsResp, err := n.getPeerDetails(peerAddr)
 		if err == nil {
 			serverId := detailsResp.ServerId
 			needToAddNode := true
 			for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-				if server.ID == raft.ServerID(serverId) || string(server.Address) == peer {
+				if server.ID == raft.ServerID(serverId) || string(server.Address) == peerAddr {
 					needToAddNode = false
 					break
 				}
 			}
 			if needToAddNode {
-				peerHost := strings.Split(peer, ":")[0]
+				peerHost := strings.Split(peerAddr, ":")[0]
 				peerDiscoveryAddr := fmt.Sprintf("%s:%d", peerHost, detailsResp.DiscoveryPort)
 				_, err = n.mList.Join([]string{peerDiscoveryAddr})
 				if err != nil {
