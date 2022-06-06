@@ -41,7 +41,6 @@ type Node struct {
 
 	stoppedCh chan interface{}
 
-	grpcPort   uint16
 	grpcServer grpcserver.Server
 
 	peerObservations <-chan hraft.Observation
@@ -49,7 +48,7 @@ type Node struct {
 	msgHandler Handler
 }
 
-func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
+func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
 
@@ -77,7 +76,6 @@ func NewNode(raftPort uint16, grpcPort uint16, discoveryPort uint16, msgHandler 
 		nodeData:       raftFsm,
 		mtx:            &sync.RWMutex{},
 		isStarted:      false,
-		grpcPort:       grpcPort,
 		msgHandler:     msgHandler,
 		partitionCount: partitionCount,
 	}
@@ -99,7 +97,9 @@ func (n *Node) Stop(ctx context.Context) {
 	defer n.mtx.Unlock()
 	if n.isStarted {
 		log.Printf("Shutting down node")
-		n.grpcServer.Stop(ctx)
+		if n.grpcServer != nil {
+			n.grpcServer.Stop(ctx)
+		}
 		go n.node.Stop()
 		// waits for easy raft shutdown
 		// TODO: sometimes this never receives, so disabling this for now
@@ -117,40 +117,44 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.isStarted {
 		return nil
 	}
+
+	// TODO: I commented out the server builder so we could share the grpc server
+	// from the raft node
+
+	// create the grpc server
+	// grpc server
+	// clusteringServer := NewClusteringService(n)
+	// grpcServer, err := grpcserver.
+	// 	NewServerBuilder().
+	// 	WithReflection(false).
+	// 	// WithDefaultUnaryInterceptors().
+	// 	// WithDefaultStreamInterceptors().
+	// 	WithTracingEnabled(false).
+	// 	// WithTraceURL("").
+	// 	WithServiceName("easyraft").
+	// 	WithMetricsEnabled(false).
+	// 	// WithMetricsPort(0).
+	// 	WithPort(int(n.grpcPort)).
+	// 	WithService(clusteringServer).
+	// 	Build()
+	clusteringServer := NewClusteringService(n)
+	localpb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
+
+	// if err != nil {
+	// 	log.Panic(fmt.Errorf("could not build server, %v", err))
+	// }
+	// n.grpcServer = grpcServer
+	// n.grpcServer.Start(ctx)
+
 	stoppedCh, err := n.node.Start()
 	if err != nil {
 		return err
 	}
 	n.stoppedCh = stoppedCh
 
-	// create the grpc server
-	// grpc server
-	clusteringServer := NewClusteringService(n)
-	grpcServer, err := grpcserver.
-		NewServerBuilder().
-		WithReflection(false).
-		// WithDefaultUnaryInterceptors().
-		// WithDefaultStreamInterceptors().
-		WithTracingEnabled(false).
-		// WithTraceURL("").
-		WithServiceName("easyraft").
-		WithMetricsEnabled(false).
-		// WithMetricsPort(0).
-		WithPort(int(n.grpcPort)).
-		WithService(clusteringServer).
-		Build()
-
-	if err != nil {
-		log.Panic(fmt.Errorf("could not build server, %v", err))
-	}
-	n.grpcServer = grpcServer
-	n.grpcServer.Start(ctx)
-
 	// handle peer observations
 	n.registerPeerObserver()
 	go n.handlePeerObservations()
-	// do node things
-	go n.handleShareGrpcPort()
 	// do leader things
 	go n.leaderRebalance()
 	n.isStarted = true
@@ -175,23 +179,6 @@ func (n *Node) registerPeerObserver() {
 	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterfn))
 	n.node.Raft.RegisterObserver(observer)
 	n.peerObservations = observerCh
-}
-
-// handleShareGrpcPort ensures the raft cluster knows this node's gRPC port
-func (n *Node) handleShareGrpcPort() {
-	for {
-		time.Sleep(time.Second * 1)
-		if n.HasLeader() {
-			// try to read grpc port from leader
-			port, err := n.getPeerPortFromLeader(n.GetNodeID())
-			if err != nil || port != n.grpcPort {
-				// if not found, send to leader
-				if err := n.setPeerPortOnLeader(); err != nil {
-					logging.Errorf("failed to share gRPC port, %v", err)
-				}
-			}
-		}
-	}
 }
 
 // handlePeerObservations handles inbound peer observations from raft
@@ -247,24 +234,6 @@ func (n *Node) leaderRebalance() {
 			}
 		}
 	}
-}
-
-// getPeerPortFromLeader queries the leader for the given peer's grpc port
-func (n *Node) getPeerPortFromLeader(peerID string) (uint16, error) {
-	port, err := raftGetFromLeader[*wrapperspb.UInt32Value](n, portsGroupName, n.GetNodeID())
-	return uint16(port.GetValue()), err
-}
-
-// getPeerPortLocally queries the local FSM store for a peer's gRPC port
-func (n *Node) getPeerPortLocally(peerID string) (uint16, error) {
-	val, err := raftGetLocally[*wrapperspb.UInt32Value](n, portsGroupName, peerID)
-	return uint16(val.GetValue()), err
-}
-
-// setPeerPortOnLeader sets current node's gRPC port on the leader
-func (n *Node) setPeerPortOnLeader() error {
-	value := wrapperspb.UInt32(uint32(n.grpcPort))
-	return raftPutValue(n, portsGroupName, n.GetNodeID(), value)
 }
 
 // getPartitionNode returns the node that owns a partition
@@ -376,7 +345,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 func (n *Node) getPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.node.RaftPort)
-	return NewPeer(n.node.ID, raftAddr, n.grpcPort)
+	return NewPeer(n.node.ID, raftAddr)
 }
 
 // getPeers returns all nodes in raft cluster (including self)
@@ -386,8 +355,7 @@ func (n *Node) getPeers() []*Peer {
 	if cfg := n.node.Raft.GetConfiguration(); cfg.Error() == nil {
 		for _, server := range cfg.Configuration().Servers {
 			peerID := string(server.ID)
-			grpcPort, _ := n.getPeerPortLocally(peerID)
-			peer := NewPeer(string(server.ID), string(server.Address), grpcPort)
+			peer := NewPeer(peerID, string(server.Address))
 			peers[peer.ID] = peer
 		}
 	}
@@ -419,11 +387,7 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 	if raftAddr == "" {
 		return nil, errors.New("could not find raft peer")
 	}
-	grpcPort, err := n.getPeerPortLocally(peerID)
-	if err != nil {
-		return nil, err
-	}
-	return NewPeer(peerID, raftAddr, grpcPort), nil
+	return NewPeer(peerID, raftAddr), nil
 }
 
 func raftDeleteValue(n *Node, group string, key string) error {
@@ -473,10 +437,9 @@ type Peer struct {
 	ID       string
 	Host     string
 	RaftPort uint16
-	GrpcPort uint16
 }
 
-func NewPeer(id string, raftAddr string, grpcPort uint16) *Peer {
+func NewPeer(id string, raftAddr string) *Peer {
 
 	addrParts := strings.Split(raftAddr, ":")
 	if len(addrParts) != 2 {
@@ -489,16 +452,15 @@ func NewPeer(id string, raftAddr string, grpcPort uint16) *Peer {
 		ID:       id,
 		Host:     host,
 		RaftPort: uint16(raftPort),
-		GrpcPort: grpcPort,
 	}
 }
 
 func (p Peer) IsReady() bool {
-	return p.GrpcPort != 0
+	return true
 }
 
 func (p Peer) GetClient(ctx context.Context) localpb.ClusteringClient {
-	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.GrpcPort)
+	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	conn, err := grpcclient.NewBuilder().
 		WithBlock().
 		WithInsecure().

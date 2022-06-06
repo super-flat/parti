@@ -35,7 +35,7 @@ func (c ClusteringService) Stats(context.Context, *localpb.StatsRequest) (*local
 	}
 
 	for _, peer := range c.node.getPeers() {
-		resp.PeerPorts[peer.ID] = uint32(peer.GrpcPort)
+		resp.PeerPorts[peer.ID] = uint32(peer.RaftPort)
 	}
 
 	return resp, nil
