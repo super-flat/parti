@@ -11,7 +11,6 @@ import (
 	"time"
 
 	hraft "github.com/hashicorp/raft"
-	"github.com/ksrichard/easyraft/discovery"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/super-flat/parti/gen/localpb"
 	"github.com/super-flat/parti/node/raftwrapper"
+	"github.com/super-flat/parti/node/raftwrapper/discovery"
 	"github.com/super-flat/parti/node/raftwrapper/fsm"
 	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	"github.com/super-flat/parti/node/rebalance"
@@ -55,7 +55,10 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 
 	// select discovery method
 	// TODO: make configurable (k8s, docker, etc)
-	discoveryService := discovery.NewMDNSDiscovery()
+	// discoveryService := discovery.NewMDNSDiscoveryLegacy()
+	// discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
+	discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
+
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
 
 	ser := serializer.NewProtoSerializer()

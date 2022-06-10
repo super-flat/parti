@@ -6,6 +6,8 @@ require (
 	github.com/Jille/raft-grpc-transport v1.2.0
 	github.com/caarlos0/env/v6 v6.9.3
 	github.com/google/uuid v1.3.0
+	github.com/grandcat/zeroconf v1.0.0
+	github.com/hashicorp/mdns v1.0.5
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/hashicorp/raft v1.3.9
 	github.com/joho/godotenv v1.4.0
@@ -35,7 +37,6 @@ require (
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.10.3 // indirect
@@ -67,8 +68,6 @@ require (
 	github.com/rs/zerolog v1.26.1 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
-	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.32.0 // indirect
 	go.opentelemetry.io/otel v1.7.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.7.0 // indirect
