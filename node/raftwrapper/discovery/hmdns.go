@@ -45,7 +45,7 @@ func (d *HashicorpDiscovery) Start(_ string, _ int) (chan string, error) {
 	// create the discovery channel
 	d.discoveryChan = make(chan string)
 	// run the background process to find peers
-	go d.findPeers2()
+	go d.findPeers()
 	// return the channel
 	d.isStarted = true
 	return d.discoveryChan, nil
@@ -67,7 +67,7 @@ func (d *HashicorpDiscovery) Stop() {
 	d.isStarted = false
 }
 
-func (d *HashicorpDiscovery) findPeers2() {
+func (d *HashicorpDiscovery) findPeers() {
 	// Setup our service export
 	host, _ := os.Hostname()
 	info := []string{""}
