@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	"google.golang.org/protobuf/proto"
 )
 

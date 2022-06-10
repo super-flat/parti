@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/super-flat/parti/node"
+	"github.com/super-flat/parti/cluster"
 )
 
 func Run() {
@@ -23,7 +23,7 @@ func Run() {
 	handler := &ExampleHandler{}
 	// run the raft node
 	numPartitions := uint32(10)
-	partiNode := node.NewNode(
+	partiNode := cluster.NewCluster(
 		cfg.RaftPort,
 		cfg.DiscoveryPort,
 		handler,

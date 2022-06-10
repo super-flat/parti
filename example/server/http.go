@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/super-flat/parti/cluster"
 	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -18,13 +18,13 @@ import (
 
 // WebServer is an http server that forwards messages to the raft cluster
 type WebServer struct {
-	Parti    *node.Node
+	Parti    *cluster.Cluster
 	HttpPort uint16
 	server   *http.Server
 }
 
 // NewWebServer returns a new WebServer
-func NewWebServer(partiNode *node.Node, HttpPort uint16) *WebServer {
+func NewWebServer(partiNode *cluster.Cluster, HttpPort uint16) *WebServer {
 	return &WebServer{
 		Parti:    partiNode,
 		HttpPort: HttpPort,

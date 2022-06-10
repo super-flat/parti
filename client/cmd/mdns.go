@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/parti/node/raftwrapper/discovery"
+	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 )
 
 func init() {

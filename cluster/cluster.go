@@ -1,4 +1,4 @@
-package node
+package cluster
 
 import (
 	"context"
@@ -15,12 +15,12 @@ import (
 	"github.com/troop-dev/go-kit/pkg/logging"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/super-flat/parti/cluster/raftwrapper"
+	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
+	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
+	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
+	"github.com/super-flat/parti/cluster/rebalance"
 	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper"
-	"github.com/super-flat/parti/node/raftwrapper/discovery"
-	"github.com/super-flat/parti/node/raftwrapper/fsm"
-	"github.com/super-flat/parti/node/raftwrapper/serializer"
-	"github.com/super-flat/parti/node/rebalance"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	portsGroupName      = "ports"
 )
 
-type Node struct {
+type Cluster struct {
 	partitionCount uint32
 
 	node     *raftwrapper.Node
@@ -44,7 +44,7 @@ type Node struct {
 	msgHandler Handler
 }
 
-func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Node {
+func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Cluster {
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
 
@@ -67,7 +67,7 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 		panic(err)
 	}
 
-	return &Node{
+	return &Cluster{
 		node:           node,
 		nodeData:       raftFsm,
 		mtx:            &sync.RWMutex{},
@@ -78,17 +78,17 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 }
 
 // GetDiscoveryPort returns the internal raft discovery port
-func (n *Node) GetDiscoveryPort() uint16 {
+func (n *Cluster) GetDiscoveryPort() uint16 {
 	return uint16(n.node.DiscoveryPort)
 }
 
 // GetNodeID returns the current node's ID
-func (n *Node) GetNodeID() string {
+func (n *Cluster) GetNodeID() string {
 	return n.node.ID
 }
 
 // Stop shuts down this node
-func (n *Node) Stop(ctx context.Context) {
+func (n *Cluster) Stop(ctx context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
@@ -106,7 +106,7 @@ func (n *Node) Stop(ctx context.Context) {
 }
 
 // Start the cluster node
-func (n *Node) Start(ctx context.Context) error {
+func (n *Cluster) Start(ctx context.Context) error {
 	// acquire lock to ensure node is only started once
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -134,7 +134,7 @@ func (n *Node) Start(ctx context.Context) error {
 
 // registerPeerObserver adds an `observer` to the raft cluster that receives
 // any PeerObservation changes and forwards them to a channel
-func (n *Node) registerPeerObserver() {
+func (n *Cluster) registerPeerObserver() {
 	if n.peerObservations != nil {
 		return
 	}
@@ -153,7 +153,7 @@ func (n *Node) registerPeerObserver() {
 }
 
 // handlePeerObservations handles inbound peer observations from raft
-func (n *Node) handlePeerObservations() {
+func (n *Cluster) handlePeerObservations() {
 	for observation := range n.peerObservations {
 		peerObservation, ok := observation.Data.(hraft.PeerObservation)
 		if ok && n.node.IsLeader() {
@@ -170,7 +170,7 @@ func (n *Node) handlePeerObservations() {
 // leaderRebalance allows the leader node to delegate partitions to its
 // cluster peers, considering nodes that have left and new nodes that
 // have joined, with a goal of evenly distributring the work.
-func (n *Node) leaderRebalance() {
+func (n *Cluster) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
 		if n.node.IsLeader() {
@@ -208,14 +208,14 @@ func (n *Node) leaderRebalance() {
 }
 
 // getPartitionNode returns the node that owns a partition
-func (n *Node) getPartitionNode(partitionID uint32) (string, error) {
+func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	val, err := raftGetLocally[*wrapperspb.StringValue](n, partitionsGroupName, key)
 	return val.GetValue(), err
 }
 
 // setPartition assigns a partition to a node
-func (n *Node) setPartition(partitionID uint32, nodeID string) error {
+func (n *Cluster) setPartition(partitionID uint32, nodeID string) error {
 	fmt.Printf("assigning partition (%d) to node (%s)\n", partitionID, nodeID)
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	value := wrapperspb.String(nodeID)
@@ -223,7 +223,7 @@ func (n *Node) setPartition(partitionID uint32, nodeID string) error {
 }
 
 // PartitionMappings returns a map of partition to node ID
-func (n *Node) PartitionMappings() map[uint32]string {
+func (n *Cluster) PartitionMappings() map[uint32]string {
 	output := map[uint32]string{}
 	var partition uint32
 	for partition = 0; partition < n.partitionCount; partition++ {
@@ -236,7 +236,7 @@ func (n *Node) PartitionMappings() map[uint32]string {
 }
 
 // Send a message to the node that owns a partition
-func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
+func (n *Cluster) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -269,7 +269,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 }
 
 // Ping a partition and receive a response from the node that owns it
-func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
+func (n *Cluster) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -301,7 +301,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 	return resp, nil
 }
 
-func raftGetLocally[T any](n *Node, group string, key string) (T, error) {
+func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 	var output T
 	value, err := n.nodeData.Get(group, key)
 	if err != nil || value == nil {

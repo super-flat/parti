@@ -1,4 +1,4 @@
-package node
+package cluster
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 )
 
 type ClusteringService struct {
-	cluster *Node
+	cluster *Cluster
 }
 
-func NewClusteringService(cluster *Node) *ClusteringService {
+func NewClusteringService(cluster *Cluster) *ClusteringService {
 	return &ClusteringService{cluster: cluster}
 }
 
