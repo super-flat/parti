@@ -77,16 +77,6 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 	}
 }
 
-// GetDiscoveryPort returns the internal raft discovery port
-func (n *Cluster) GetDiscoveryPort() uint16 {
-	return uint16(n.node.DiscoveryPort)
-}
-
-// GetNodeID returns the current node's ID
-func (n *Cluster) GetNodeID() string {
-	return n.node.ID
-}
-
 // Stop shuts down this node
 func (n *Cluster) Stop(ctx context.Context) {
 	n.mtx.Lock()
@@ -243,14 +233,14 @@ func (n *Cluster) Send(ctx context.Context, request *localpb.SendRequest) (*loca
 		return nil, err
 	}
 	// if partition owned by this node, answer locally
-	if ownerNodeID == n.GetNodeID() {
+	if ownerNodeID == n.node.ID {
 		logging.Debugf("received local send, partition=%d, id=%s", partitionID, request.GetMessageId())
 		handlerResp, err := n.msgHandler.Handle(ctx, partitionID, request.GetMessage())
 		if err != nil {
 			return nil, err
 		}
 		resp := &localpb.SendResponse{
-			NodeId:      n.GetNodeID(),
+			NodeId:      n.node.ID,
 			PartitionId: request.GetPartitionId(),
 			MessageId:   request.GetMessageId(),
 			Response:    handlerResp,
