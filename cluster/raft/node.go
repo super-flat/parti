@@ -44,7 +44,7 @@ type Node struct {
 	snapshotEnabled  bool
 }
 
-// NewNode returns an EasyRaft node
+// NewNode returns an Parti node
 func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.IDiscovery) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
@@ -95,7 +95,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 
 	// logging
 	logger := log.Default()
-	logger.SetPrefix("[EasyRaft] ")
+	logger.SetPrefix("[Parti] ")
 
 	grpcServer := grpc.NewServer()
 

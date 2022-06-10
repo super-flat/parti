@@ -54,8 +54,8 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 
 	// select discovery method
 	// TODO: make configurable (k8s, docker, etc)
-	// discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
-	discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
+	discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
+	//discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
 
 	// discoveryService := discovery.NewStaticDiscovery([]string{})
 
@@ -133,7 +133,7 @@ func (n *Node) Start(ctx context.Context) error {
 	// 	// WithDefaultStreamInterceptors().
 	// 	WithTracingEnabled(false).
 	// 	// WithTraceURL("").
-	// 	WithServiceName("easyraft").
+	// 	WithServiceName("parti").
 	// 	WithMetricsEnabled(false).
 	// 	// WithMetricsPort(0).
 	// 	WithPort(int(n.grpcPort)).
