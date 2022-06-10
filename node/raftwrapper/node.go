@@ -22,6 +22,8 @@ import (
 	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
@@ -363,6 +365,55 @@ func (n *Node) HasLeader() bool {
 	return n.Raft.Leader() != ""
 }
 
+// GetPeerSelf returns a Peer for the current node
+func (n *Node) GetPeerSelf() *Peer {
+	// todo: make this smarter for self
+	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.RaftPort)
+	return NewPeer(n.ID, raftAddr)
+}
+
+// GetPeers returns all nodes in raft cluster (including self)
+func (n *Node) GetPeers() []*Peer {
+	peers := make(map[string]*Peer, 3)
+
+	if cfg := n.Raft.GetConfiguration(); cfg.Error() == nil {
+		for _, server := range cfg.Configuration().Servers {
+			peerID := string(server.ID)
+			peer := NewPeer(peerID, string(server.Address))
+			peers[peer.ID] = peer
+		}
+	}
+
+	output := make([]*Peer, 0, len(peers))
+	for _, peer := range peers {
+		output = append(output, peer)
+	}
+
+	return output
+}
+
+// GetPeer returns a specific peer given an ID
+func (n *Node) GetPeer(peerID string) (*Peer, error) {
+	if peerID == n.ID {
+		return n.GetPeerSelf(), nil
+	}
+	cfg := n.Raft.GetConfiguration()
+	if err := cfg.Error(); err != nil {
+		return nil, err
+	}
+	raftAddr := ""
+	for _, server := range cfg.Configuration().Servers {
+		if string(server.ID) == peerID {
+			raftAddr = string(server.Address)
+			break
+		}
+	}
+	if raftAddr == "" {
+		return nil, errors.New("could not find raft peer")
+	}
+	return NewPeer(peerID, raftAddr), nil
+}
+
 // newNodeID returns a random node ID of length `size`
 func newNodeID(size int) string {
 	// TODO, do we need to do this anymore?
@@ -372,4 +423,34 @@ func newNodeID(size int) string {
 		b[i] = nodeIDCharacters[rand.Intn(len(nodeIDCharacters))]
 	}
 	return string(b)
+}
+
+func RaftApplyDelete(n *Node, group string, key string) error {
+	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
+	_, err := n.RaftApply(request, time.Second)
+	return err
+}
+
+func RaftApplyPut(n *Node, group string, key string, value proto.Message) error {
+	anyVal, err := anypb.New(value)
+	if err != nil {
+		return err
+	}
+	request := &localpb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
+	_, err = n.RaftApply(request, time.Second)
+	return err
+}
+
+func RaftApplyGet[T any](n *Node, group, key string) (T, error) {
+	request := &localpb.FsmGetRequest{Group: group, Key: key}
+	result, err := n.RaftApply(request, time.Second)
+	var output T
+	if err != nil || result == nil {
+		return output, err
+	}
+	resultTyped, ok := result.(T)
+	if !ok {
+		return output, fmt.Errorf("bad value type, '%T' '%v'", result, result)
+	}
+	return resultTyped, nil
 }

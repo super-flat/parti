@@ -9,32 +9,32 @@ import (
 )
 
 type ClusteringService struct {
-	node *Node
+	cluster *Node
 }
 
-func NewClusteringService(nw *Node) *ClusteringService {
-	return &ClusteringService{node: nw}
+func NewClusteringService(cluster *Node) *ClusteringService {
+	return &ClusteringService{cluster: cluster}
 }
 
 // Ping method is for testing node liveness
 func (c ClusteringService) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
 	logging.Debugf("received ping %d", request.GetPartitionId())
-	return c.node.Ping(ctx, request)
+	return c.cluster.Ping(ctx, request)
 }
 
 func (c ClusteringService) Stats(context.Context, *localpb.StatsRequest) (*localpb.StatsResponse, error) {
 	resp := &localpb.StatsResponse{
-		NodeId:          c.node.GetNodeID(),
-		IsLeader:        c.node.IsLeader(),
+		NodeId:          c.cluster.node.ID,
+		IsLeader:        c.cluster.node.IsLeader(),
 		PartitionOwners: make(map[uint32]string, 0),
 		PeerPorts:       make(map[string]uint32),
 	}
 
-	for partition, owner := range c.node.PartitionMappings() {
+	for partition, owner := range c.cluster.PartitionMappings() {
 		resp.PartitionOwners[partition] = owner
 	}
 
-	for _, peer := range c.node.getPeers() {
+	for _, peer := range c.cluster.node.GetPeers() {
 		resp.PeerPorts[peer.ID] = uint32(peer.RaftPort)
 	}
 
@@ -43,7 +43,7 @@ func (c ClusteringService) Stats(context.Context, *localpb.StatsRequest) (*local
 
 func (c ClusteringService) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
 	logging.Debugf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
-	return c.node.Send(ctx, request)
+	return c.cluster.Send(ctx, request)
 }
 
 func (c *ClusteringService) RegisterService(server *grpc.Server) {

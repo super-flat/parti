@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,8 +13,6 @@ import (
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/super-flat/parti/gen/localpb"
@@ -39,8 +36,6 @@ type Node struct {
 
 	mtx       *sync.RWMutex
 	isStarted bool
-
-	stoppedCh chan interface{}
 
 	grpcServer grpcserver.Server
 
@@ -118,46 +113,21 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.isStarted {
 		return nil
 	}
-
-	// TODO: I commented out the server builder so we could share the grpc server
-	// from the raft node
-
-	// create the grpc server
-	// grpc server
-	// clusteringServer := NewClusteringService(n)
-	// grpcServer, err := grpcserver.
-	// 	NewServerBuilder().
-	// 	WithReflection(false).
-	// 	// WithDefaultUnaryInterceptors().
-	// 	// WithDefaultStreamInterceptors().
-	// 	WithTracingEnabled(false).
-	// 	// WithTraceURL("").
-	// 	WithServiceName("easyraft").
-	// 	WithMetricsEnabled(false).
-	// 	// WithMetricsPort(0).
-	// 	WithPort(int(n.grpcPort)).
-	// 	WithService(clusteringServer).
-	// 	Build()
+	// register the clustering gRPC service on the node's grpc server
+	// so that they share a single gRPC port
 	clusteringServer := NewClusteringService(n)
 	localpb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
-
-	// if err != nil {
-	// 	log.Panic(fmt.Errorf("could not build server, %v", err))
-	// }
-	// n.grpcServer = grpcServer
-	// n.grpcServer.Start(ctx)
-
-	stoppedCh, err := n.node.Start()
+	// start the underlying raft node
+	_, err := n.node.Start()
 	if err != nil {
 		return err
 	}
-	n.stoppedCh = stoppedCh
-
 	// handle peer observations
 	n.registerPeerObserver()
 	go n.handlePeerObservations()
 	// do leader things
 	go n.leaderRebalance()
+	// complete startup
 	n.isStarted = true
 	return nil
 }
@@ -186,12 +156,12 @@ func (n *Node) registerPeerObserver() {
 func (n *Node) handlePeerObservations() {
 	for observation := range n.peerObservations {
 		peerObservation, ok := observation.Data.(hraft.PeerObservation)
-		if ok && n.IsLeader() {
+		if ok && n.node.IsLeader() {
 			if peerObservation.Removed {
 				// remove from the list of ports
-				raftDeleteValue(n, portsGroupName, string(peerObservation.Peer.ID))
+				raftwrapper.RaftApplyDelete(n.node, portsGroupName, string(peerObservation.Peer.ID))
 				// remove from the list of partitions
-				raftDeleteValue(n, partitionsGroupName, string(peerObservation.Peer.ID))
+				raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID))
 			}
 		}
 	}
@@ -203,7 +173,7 @@ func (n *Node) handlePeerObservations() {
 func (n *Node) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
-		if n.IsLeader() {
+		if n.node.IsLeader() {
 			// get current partitions
 			currentPartitions := make(map[uint32]string, n.partitionCount)
 			for partition := uint32(0); partition < n.partitionCount; partition++ {
@@ -216,9 +186,9 @@ func (n *Node) leaderRebalance() {
 				}
 			}
 			// get active peers
-			peerMap := map[string]*Peer{}
+			peerMap := map[string]*raftwrapper.Peer{}
 			activePeerIDs := make([]string, 0)
-			for _, peer := range n.getPeers() {
+			for _, peer := range n.node.GetPeers() {
 				if peer.IsReady() {
 					peerMap[peer.ID] = peer
 					activePeerIDs = append(activePeerIDs, peer.ID)
@@ -249,18 +219,7 @@ func (n *Node) setPartition(partitionID uint32, nodeID string) error {
 	fmt.Printf("assigning partition (%d) to node (%s)\n", partitionID, nodeID)
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	value := wrapperspb.String(nodeID)
-	return raftPutValue(n, partitionsGroupName, key, value)
-}
-
-// IsLeader returns true if the current node is the cluster leader
-func (n *Node) IsLeader() bool {
-	return n.node.IsLeader()
-}
-
-// HasLeader returns true if the current node is aware of a cluster leader
-// including itself
-func (n *Node) HasLeader() bool {
-	return n.node.HasLeader()
+	return raftwrapper.RaftApplyPut(n.node, partitionsGroupName, key, value)
 }
 
 // PartitionMappings returns a map of partition to node ID
@@ -298,7 +257,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 		}
 		return resp, nil
 	}
-	peer, err := n.getPeer(ownerNodeID)
+	peer, err := n.node.GetPeer(ownerNodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +265,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding send, node=%s, messageID=%s, partition=%d", peer.ID, request.GetMessageId(), partitionID)
-	return peer.GetClient(ctx).Send(ctx, request)
+	return getClient(peer, ctx).Send(ctx, request)
 }
 
 // Ping a partition and receive a response from the node that owns it
@@ -324,7 +283,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 		}
 		return resp, nil
 	}
-	peer, err := n.getPeer(ownerNodeID)
+	peer, err := n.node.GetPeer(ownerNodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +291,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
-	resp, err := peer.GetClient(ctx).Ping(ctx, &localpb.PingRequest{
+	resp, err := getClient(peer, ctx).Ping(ctx, &localpb.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,
 	})
@@ -340,85 +299,6 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 		return nil, err
 	}
 	return resp, nil
-}
-
-// getPeerSelf returns a Peer for the current node
-func (n *Node) getPeerSelf() *Peer {
-	// todo: make this smarter for self
-	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.node.RaftPort)
-	return NewPeer(n.node.ID, raftAddr)
-}
-
-// getPeers returns all nodes in raft cluster (including self)
-func (n *Node) getPeers() []*Peer {
-	peers := make(map[string]*Peer, 3)
-
-	if cfg := n.node.Raft.GetConfiguration(); cfg.Error() == nil {
-		for _, server := range cfg.Configuration().Servers {
-			peerID := string(server.ID)
-			peer := NewPeer(peerID, string(server.Address))
-			peers[peer.ID] = peer
-		}
-	}
-
-	output := make([]*Peer, 0, len(peers))
-	for _, peer := range peers {
-		output = append(output, peer)
-	}
-
-	return output
-}
-
-// getPeer returns a specific peer given an ID
-func (n *Node) getPeer(peerID string) (*Peer, error) {
-	if peerID == n.node.ID {
-		return n.getPeerSelf(), nil
-	}
-	cfg := n.node.Raft.GetConfiguration()
-	if err := cfg.Error(); err != nil {
-		return nil, err
-	}
-	raftAddr := ""
-	for _, server := range cfg.Configuration().Servers {
-		if string(server.ID) == peerID {
-			raftAddr = string(server.Address)
-			break
-		}
-	}
-	if raftAddr == "" {
-		return nil, errors.New("could not find raft peer")
-	}
-	return NewPeer(peerID, raftAddr), nil
-}
-
-func raftDeleteValue(n *Node, group string, key string) error {
-	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
-	_, err := n.node.RaftApply(request, time.Second)
-	return err
-}
-
-func raftPutValue(n *Node, group string, key string, value proto.Message) error {
-	anyVal, err := anypb.New(value)
-	if err != nil {
-		return err
-	}
-	request := &localpb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
-	_, err = n.node.RaftApply(request, time.Second)
-	return err
-}
-
-func raftGetFromLeader[T any](n *Node, group, key string) (T, error) {
-	request := &localpb.FsmGetRequest{Group: group, Key: key}
-	result, err := n.node.RaftApply(request, time.Second)
-	var output T
-	if err != nil || result == nil {
-		return output, err
-	}
-	resultTyped, ok := result.(T)
-	if !ok {
-		return output, fmt.Errorf("bad value type, '%T' '%v'", result, result)
-	}
-	return resultTyped, nil
 }
 
 func raftGetLocally[T any](n *Node, group string, key string) (T, error) {
@@ -434,33 +314,7 @@ func raftGetLocally[T any](n *Node, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
-type Peer struct {
-	ID       string
-	Host     string
-	RaftPort uint16
-}
-
-func NewPeer(id string, raftAddr string) *Peer {
-
-	addrParts := strings.Split(raftAddr, ":")
-	if len(addrParts) != 2 {
-		panic(fmt.Errorf("cant parse raft addr '%s'", raftAddr))
-	}
-	host := addrParts[0]
-	raftPort, _ := strconv.ParseUint(addrParts[1], 10, 16)
-
-	return &Peer{
-		ID:       id,
-		Host:     host,
-		RaftPort: uint16(raftPort),
-	}
-}
-
-func (p Peer) IsReady() bool {
-	return true
-}
-
-func (p Peer) GetClient(ctx context.Context) localpb.ClusteringClient {
+func getClient(p *raftwrapper.Peer, ctx context.Context) localpb.ClusteringClient {
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	conn, err := grpcclient.NewBuilder().
 		WithBlock().
