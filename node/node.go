@@ -55,10 +55,8 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 
 	// select discovery method
 	// TODO: make configurable (k8s, docker, etc)
-	// discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
-	discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
-
-	// discoveryService := discovery.NewStaticDiscovery([]string{})
+	discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
+	// discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
 
 	ser := serializer.NewProtoSerializer()
 

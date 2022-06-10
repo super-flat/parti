@@ -70,7 +70,6 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	// snapshot store that discards everything
 	// TODO: see if there's any reason not to use this inmem snapshot store
 	var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
-	// snapshotStore = raft.NewInmemSnapshotStore()
 	// snapshotStore = raft.NewDiscardSnapshotStore()
 
 	// grpc transport
