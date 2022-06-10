@@ -17,8 +17,8 @@ import (
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
-	"github.com/ksrichard/easyraft/discovery"
 	"github.com/super-flat/parti/gen/localpb"
+	"github.com/super-flat/parti/node/raftwrapper/discovery"
 	"github.com/super-flat/parti/node/raftwrapper/serializer"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -157,7 +157,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
-	discoveryChan, err := n.DiscoveryMethod.Start(n.ID, n.RaftPort)
+	discoveryChan, err := n.DiscoveryMethod.Start(n.ID)
 	if err != nil {
 		return nil, err
 	}
