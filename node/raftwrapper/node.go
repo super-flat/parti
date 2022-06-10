@@ -156,7 +156,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
-	discoveryChan, err := n.DiscoveryMethod.Start(n.ID)
+	discoveryChan, err := n.DiscoveryMethod.Start()
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT, syscall.SIGKILL)
 	go func() {
-		_ = <-sigs
+		<-sigs
 		n.Stop()
 	}()
 

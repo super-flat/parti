@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -18,7 +19,6 @@ const (
 
 type MDNSDiscovery struct {
 	delayTime     time.Duration
-	nodeID        string
 	raftPort      int
 	discoveryChan chan string
 	stopChan      chan bool
@@ -39,13 +39,12 @@ func NewMDNSDiscovery(raftPort int) *MDNSDiscovery {
 	}
 }
 
-func (d *MDNSDiscovery) Start(nodeID string) (chan string, error) {
+func (d *MDNSDiscovery) Start() (chan string, error) {
 	d.mtx.Lock()
 	defer d.mtx.Unlock()
 	if d.isStarted {
 		return nil, errors.New("already started")
 	}
-	d.nodeID = nodeID
 	d.discoveryChan = make(chan string)
 	go d.discovery()
 	d.isStarted = true
@@ -54,8 +53,9 @@ func (d *MDNSDiscovery) Start(nodeID string) (chan string, error) {
 
 func (d *MDNSDiscovery) discovery() {
 	// expose mdns server
+	instance, _ := os.Hostname()
 	mdnsServer, err := zeroconf.Register(
-		d.nodeID,
+		instance,
 		mdnsServiceName,
 		"local.",
 		d.raftPort,

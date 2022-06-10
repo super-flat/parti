@@ -2,9 +2,9 @@ package discovery
 
 // DiscoveryMethod gives the interface to perform automatic Node discovery
 type DiscoveryMethod interface {
-	// Start is about to start the discovery method
-	// it returns a channel where the node will consume node addresses ("IP:NodeRaftPort") until the channel gets closed
-	Start(nodeID string) (chan string, error)
+	// Start the discovery method, which returns a channel that notifies of
+	// new nodes discovered (format "IP:RaftPort")
+	Start() (chan string, error)
 
 	// SupportsNodeAutoRemoval indicates whether the actual discovery method supports the automatic node removal or not
 	SupportsNodeAutoRemoval() bool
