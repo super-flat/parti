@@ -95,10 +95,12 @@ func (d *MDNSDiscovery) discovery() {
 					log.Printf("found new peer %s", newPeer)
 					// only write record if isStarted = true, because
 					// stop method closes the channel
+					d.mtx.Lock()
 					if d.isStarted {
 						d.discoveryChan <- newPeer
 						seenPeers[newPeer] = time.Now()
 					}
+					d.mtx.Unlock()
 				}
 			}
 		}
