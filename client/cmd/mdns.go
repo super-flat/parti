@@ -24,7 +24,7 @@ var mdnsCMD = &cobra.Command{
 
 		disco := discovery.NewMDNSDiscovery(grpcPort)
 
-		nodesChan, err := disco.Start("asdf", 0)
+		nodesChan, err := disco.Start("asdf")
 		if err != nil {
 			log.Fatal(err)
 		}
