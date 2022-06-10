@@ -1,4 +1,4 @@
-package node
+package cluster
 
 import (
 	"context"
@@ -11,19 +11,18 @@ import (
 	"time"
 
 	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/raft"
+	"github.com/super-flat/parti/cluster/raft/discovery"
+	"github.com/super-flat/parti/cluster/raft/fsm"
+	"github.com/super-flat/parti/cluster/raft/serializer"
+	"github.com/super-flat/parti/cluster/rebalance"
+	partiv1 "github.com/super-flat/parti/partipb/parti/v1"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-
-	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper"
-	"github.com/super-flat/parti/node/raftwrapper/discovery"
-	"github.com/super-flat/parti/node/raftwrapper/fsm"
-	"github.com/super-flat/parti/node/raftwrapper/serializer"
-	"github.com/super-flat/parti/node/rebalance"
 )
 
 const (
@@ -34,7 +33,7 @@ const (
 type Node struct {
 	partitionCount uint32
 
-	node     *raftwrapper.Node
+	node     *raft.Node
 	nodeData *fsm.ProtoFsm
 
 	mtx       *sync.RWMutex
@@ -63,7 +62,7 @@ func NewNode(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitio
 	ser := serializer.NewProtoSerializer()
 
 	// instantiate the raft node
-	node, err := raftwrapper.NewNode(
+	node, err := raft.NewNode(
 		int(raftPort),
 		int(discoveryPort),
 		raftFsm,
@@ -141,7 +140,7 @@ func (n *Node) Start(ctx context.Context) error {
 	// 	WithService(clusteringServer).
 	// 	Build()
 	clusteringServer := NewClusteringService(n)
-	localpb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
+	partiv1.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
 
 	// if err != nil {
 	// 	log.Panic(fmt.Errorf("could not build server, %v", err))
@@ -201,7 +200,7 @@ func (n *Node) handlePeerObservations() {
 
 // leaderRebalance allows the leader node to delegate partitions to its
 // cluster peers, considering nodes that have left and new nodes that
-// have joined, with a goal of evenly distributring the work.
+// have joined, with a goal of evenly distributing the work.
 func (n *Node) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
@@ -279,7 +278,7 @@ func (n *Node) PartitionMappings() map[uint32]string {
 }
 
 // Send a message to the node that owns a partition
-func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
+func (n *Node) Send(ctx context.Context, request *partiv1.SendRequest) (*partiv1.SendResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -292,7 +291,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 		if err != nil {
 			return nil, err
 		}
-		resp := &localpb.SendResponse{
+		resp := &partiv1.SendResponse{
 			NodeId:      n.GetNodeID(),
 			PartitionId: request.GetPartitionId(),
 			MessageId:   request.GetMessageId(),
@@ -312,7 +311,7 @@ func (n *Node) Send(ctx context.Context, request *localpb.SendRequest) (*localpb
 }
 
 // Ping a partition and receive a response from the node that owns it
-func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
+func (n *Node) Ping(ctx context.Context, request *partiv1.PingRequest) (*partiv1.PingResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -320,7 +319,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 	}
 	if ownerNodeID == n.node.ID {
 		logging.Debugf("received ping, answering locally, partition=%d", partitionID)
-		resp := &localpb.PingResponse{
+		resp := &partiv1.PingResponse{
 			NodeId: n.node.ID,
 			Hops:   request.GetHops() + 1,
 		}
@@ -334,7 +333,7 @@ func (n *Node) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
-	resp, err := peer.GetClient(ctx).Ping(ctx, &localpb.PingRequest{
+	resp, err := peer.GetClient(ctx).Ping(ctx, &partiv1.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,
 	})
@@ -394,7 +393,7 @@ func (n *Node) getPeer(peerID string) (*Peer, error) {
 }
 
 func raftDeleteValue(n *Node, group string, key string) error {
-	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
+	request := &partiv1.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.node.RaftApply(request, time.Second)
 	return err
 }
@@ -404,13 +403,13 @@ func raftPutValue(n *Node, group string, key string, value proto.Message) error 
 	if err != nil {
 		return err
 	}
-	request := &localpb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
+	request := &partiv1.FsmPutRequest{Group: group, Key: key, Value: anyVal}
 	_, err = n.node.RaftApply(request, time.Second)
 	return err
 }
 
 func raftGetFromLeader[T any](n *Node, group, key string) (T, error) {
-	request := &localpb.FsmGetRequest{Group: group, Key: key}
+	request := &partiv1.FsmGetRequest{Group: group, Key: key}
 	result, err := n.node.RaftApply(request, time.Second)
 	var output T
 	if err != nil || result == nil {
@@ -462,7 +461,7 @@ func (p Peer) IsReady() bool {
 	return true
 }
 
-func (p Peer) GetClient(ctx context.Context) localpb.ClusteringClient {
+func (p Peer) GetClient(ctx context.Context) partiv1.ClusteringClient {
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	conn, err := grpcclient.NewBuilder().
 		WithBlock().
@@ -473,6 +472,6 @@ func (p Peer) GetClient(ctx context.Context) localpb.ClusteringClient {
 		// todo: don't panic here
 		panic(err)
 	}
-	client := localpb.NewClusteringClient(conn)
+	client := partiv1.NewClusteringClient(conn)
 	return client
 }

@@ -1,7 +1,7 @@
 package discovery
 
-// DiscoveryMethod gives the interface to perform automatic Node discovery
-type DiscoveryMethod interface {
+// IDiscovery gives the interface to perform automatic Node discovery
+type IDiscovery interface {
 	// Start is about to start the discovery method
 	// it returns a channel where the node will consume node addresses ("IP:NodeRaftPort") until the channel gets closed
 	Start(nodeID string) (chan string, error)

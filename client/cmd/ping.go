@@ -5,14 +5,14 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func init() {
 	pingCMD.Flags().String("addr", "", "grpc address")
-	pingCMD.Flags().Uint32("partition", 0, "partitiont to ping")
+	pingCMD.Flags().Uint32("partition", 0, "partition to ping")
 
 	rootCmd.AddCommand(pingCMD)
 }
@@ -34,9 +34,9 @@ var pingCMD = &cobra.Command{
 			// todo: don't panic here
 			panic(err)
 		}
-		client := localpb.NewClusteringClient(conn)
+		client := partipb.NewClusteringClient(conn)
 
-		req := &localpb.PingRequest{PartitionId: partition}
+		req := &partipb.PingRequest{PartitionId: partition}
 		resp, err := client.Ping(context.Background(), req)
 		if err != nil {
 			panic(err)

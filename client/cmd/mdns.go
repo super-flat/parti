@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/parti/node/raftwrapper/discovery"
+	"github.com/super-flat/parti/cluster/raft/discovery"
 )
 
 func init() {
@@ -24,7 +24,7 @@ var mdnsCMD = &cobra.Command{
 
 		disco := discovery.NewMDNSDiscovery(grpcPort)
 
-		nodesChan, err := disco.Start("asdf", 0)
+		nodesChan, err := disco.Start("asdf")
 		if err != nil {
 			log.Fatal(err)
 		}

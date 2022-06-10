@@ -1,9 +1,9 @@
-package node
+package cluster
 
 import (
 	"context"
 
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
 	"github.com/troop-dev/go-kit/pkg/logging"
 	"google.golang.org/grpc"
 )
@@ -16,14 +16,17 @@ func NewClusteringService(nw *Node) *ClusteringService {
 	return &ClusteringService{node: nw}
 }
 
+// ensure implements complete interface
+var _ partipb.ClusteringServer = ClusteringService{}
+
 // Ping method is for testing node liveness
-func (c ClusteringService) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
+func (c ClusteringService) Ping(ctx context.Context, request *partipb.PingRequest) (*partipb.PingResponse, error) {
 	logging.Debugf("received ping %d", request.GetPartitionId())
 	return c.node.Ping(ctx, request)
 }
 
-func (c ClusteringService) Stats(context.Context, *localpb.StatsRequest) (*localpb.StatsResponse, error) {
-	resp := &localpb.StatsResponse{
+func (c ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*partipb.StatsResponse, error) {
+	resp := &partipb.StatsResponse{
 		NodeId:          c.node.GetNodeID(),
 		IsLeader:        c.node.IsLeader(),
 		PartitionOwners: make(map[uint32]string, 0),
@@ -41,14 +44,11 @@ func (c ClusteringService) Stats(context.Context, *localpb.StatsRequest) (*local
 	return resp, nil
 }
 
-func (c ClusteringService) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
+func (c ClusteringService) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
 	logging.Debugf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
 	return c.node.Send(ctx, request)
 }
 
 func (c *ClusteringService) RegisterService(server *grpc.Server) {
-	localpb.RegisterClusteringServer(server, c)
+	partipb.RegisterClusteringServer(server, c)
 }
-
-// ensure implements complete interface
-var _ localpb.ClusteringServer = ClusteringService{}

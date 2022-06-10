@@ -20,7 +20,7 @@ type HashicorpDiscovery struct {
 	mtx       *sync.Mutex
 	isStarted bool
 	nodePort  int
-	// channel of disovered peers ("host:raftPort")
+	// channel of discovered peers ("host:raftPort")
 	discoveryChan chan string
 	stopChan      chan bool
 }
@@ -135,4 +135,4 @@ func (d *HashicorpDiscovery) findPeers() {
 	cancel()
 }
 
-var _ DiscoveryMethod = &HashicorpDiscovery{}
+var _ IDiscovery = &HashicorpDiscovery{}

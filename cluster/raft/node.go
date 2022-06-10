@@ -1,4 +1,4 @@
-package raftwrapper
+package raft
 
 import (
 	"context"
@@ -17,10 +17,10 @@ import (
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
-	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper/discovery"
-	"github.com/super-flat/parti/node/raftwrapper/serializer"
-	ggrpc "google.golang.org/grpc"
+	"github.com/super-flat/parti/cluster/raft/discovery"
+	"github.com/super-flat/parti/cluster/raft/serializer"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -32,8 +32,8 @@ type Node struct {
 	DiscoveryPort    int
 	address          string
 	Raft             *raft.Raft
-	GrpcServer       *ggrpc.Server
-	DiscoveryMethod  discovery.DiscoveryMethod
+	GrpcServer       *grpc.Server
+	DiscoveryMethod  discovery.IDiscovery
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	mList            *memberlist.Memberlist
@@ -45,7 +45,7 @@ type Node struct {
 }
 
 // NewNode returns an EasyRaft node
-func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.IDiscovery) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := newNodeID(6)
@@ -76,9 +76,9 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	// grpc transport
 	grpcTransport := transport.New(
 		raft.ServerAddress(addr),
-		[]ggrpc.DialOption{
+		[]grpc.DialOption{
 			// TODO: is this needed, or is insecure default?
-			ggrpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		},
 	)
 
@@ -97,7 +97,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	logger := log.Default()
 	logger.SetPrefix("[EasyRaft] ")
 
-	grpcServer := ggrpc.NewServer()
+	grpcServer := grpc.NewServer()
 
 	// initial stopped flag
 	var stopped uint32
@@ -154,7 +154,7 @@ func (n *Node) Start() (chan interface{}, error) {
 
 	// register custom raft RPC
 	raftRpcServer := NewRaftRpcServer(n)
-	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
+	partipb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
 	discoveryChan, err := n.DiscoveryMethod.Start(n.ID)
@@ -248,16 +248,16 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 	}
 }
 
-func (n *Node) getPeerDetails(peerAddress string) (*localpb.GetPeerDetailsResponse, error) {
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(peerAddress, ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
+	var opt grpc.DialOption = grpc.EmptyDialOption{}
+	conn, err := grpc.Dial(peerAddress, grpc.WithInsecure(), grpc.WithBlock(), opt)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	client := localpb.NewRaftClient(conn)
+	client := partipb.NewRaftClient(conn)
 
-	response, err := client.GetPeerDetails(context.Background(), &localpb.GetPeerDetailsRequest{})
+	response, err := client.GetPeerDetails(context.Background(), &partipb.GetPeerDetailsRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -333,15 +333,15 @@ func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
 	if !n.HasLeader() {
 		return nil, errors.New("unknown leader")
 	}
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(string(n.Raft.Leader()), ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+	var opt grpc.DialOption = grpc.EmptyDialOption{}
+	conn, err := grpc.Dial(string(n.Raft.Leader()), grpc.WithInsecure(), grpc.WithBlock(), opt)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	client := localpb.NewRaftClient(conn)
+	client := partipb.NewRaftClient(conn)
 
-	response, err := client.ApplyLog(context.Background(), &localpb.ApplyLogRequest{Request: payload})
+	response, err := client.ApplyLog(context.Background(), &partipb.ApplyLogRequest{Request: payload})
 	if err != nil {
 		return nil, err
 	}

@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/hashicorp/raft"
-	"github.com/super-flat/parti/gen/localpb"
-	"github.com/super-flat/parti/node/raftwrapper/serializer"
+	"github.com/super-flat/parti/cluster/raft/serializer"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -17,6 +17,8 @@ type ProtoFsm struct {
 	mtx  *sync.Mutex
 	ser  *serializer.ProtoSerializer
 }
+
+var _ raft.FSM = &ProtoFsm{}
 
 func NewProtoFsm() *ProtoFsm {
 	return &ProtoFsm{
@@ -56,17 +58,17 @@ func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
 
 func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 	switch v := cmd.(type) {
-	case *localpb.FsmGetRequest:
+	case *partipb.FsmGetRequest:
 		output, err := p.Get(v.GetGroup(), v.GetKey())
 		return output, err
-	case *localpb.FsmPutRequest:
+	case *partipb.FsmPutRequest:
 		value, err := v.GetValue().UnmarshalNew()
 		if err != nil {
 			return nil, err
 		}
 		err = p.put(v.GetGroup(), v.GetKey(), value)
 		return nil, err
-	case *localpb.FsmRemoveRequest:
+	case *partipb.FsmRemoveRequest:
 		p.remove(v.GetGroup(), v.GetKey())
 		return nil, nil
 	default:
@@ -141,5 +143,3 @@ func (p *ProtoFsm) remove(group, key string) {
 		delete(groupMap, key)
 	}
 }
-
-var _ raft.FSM = &ProtoFsm{}

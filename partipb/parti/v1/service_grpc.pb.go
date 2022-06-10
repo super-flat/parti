@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             (unknown)
-// source: localpb/service.proto
+// source: parti/v1/service.proto
 
-package localpb
+package partiv1
 
 import (
 	context "context"
@@ -40,7 +40,7 @@ func NewClusteringClient(cc grpc.ClientConnInterface) ClusteringClient {
 
 func (c *clusteringClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
 	out := new(PingResponse)
-	err := c.cc.Invoke(ctx, "/local.Clustering/Ping", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/Ping", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (c *clusteringClient) Ping(ctx context.Context, in *PingRequest, opts ...gr
 
 func (c *clusteringClient) Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error) {
 	out := new(StatsResponse)
-	err := c.cc.Invoke(ctx, "/local.Clustering/Stats", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/Stats", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (c *clusteringClient) Stats(ctx context.Context, in *StatsRequest, opts ...
 
 func (c *clusteringClient) Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error) {
 	out := new(SendResponse)
-	err := c.cc.Invoke(ctx, "/local.Clustering/Send", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/Send", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func _Clustering_Ping_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/local.Clustering/Ping",
+		FullMethod: "/parti.v1.Clustering/Ping",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ClusteringServer).Ping(ctx, req.(*PingRequest))
@@ -130,7 +130,7 @@ func _Clustering_Stats_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/local.Clustering/Stats",
+		FullMethod: "/parti.v1.Clustering/Stats",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ClusteringServer).Stats(ctx, req.(*StatsRequest))
@@ -148,7 +148,7 @@ func _Clustering_Send_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/local.Clustering/Send",
+		FullMethod: "/parti.v1.Clustering/Send",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ClusteringServer).Send(ctx, req.(*SendRequest))
@@ -160,7 +160,7 @@ func _Clustering_Send_Handler(srv interface{}, ctx context.Context, dec func(int
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Clustering_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "local.Clustering",
+	ServiceName: "parti.v1.Clustering",
 	HandlerType: (*ClusteringServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -177,7 +177,7 @@ var Clustering_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "localpb/service.proto",
+	Metadata: "parti/v1/service.proto",
 }
 
 // RaftClient is the client API for Raft service.
@@ -200,7 +200,7 @@ func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
 
 func (c *raftClient) GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error) {
 	out := new(GetPeerDetailsResponse)
-	err := c.cc.Invoke(ctx, "/local.Raft/GetPeerDetails", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/parti.v1.Raft/GetPeerDetails", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func (c *raftClient) GetPeerDetails(ctx context.Context, in *GetPeerDetailsReque
 
 func (c *raftClient) ApplyLog(ctx context.Context, in *ApplyLogRequest, opts ...grpc.CallOption) (*ApplyLogResponse, error) {
 	out := new(ApplyLogResponse)
-	err := c.cc.Invoke(ctx, "/local.Raft/ApplyLog", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/parti.v1.Raft/ApplyLog", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +258,7 @@ func _Raft_GetPeerDetails_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/local.Raft/GetPeerDetails",
+		FullMethod: "/parti.v1.Raft/GetPeerDetails",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RaftServer).GetPeerDetails(ctx, req.(*GetPeerDetailsRequest))
@@ -276,7 +276,7 @@ func _Raft_ApplyLog_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/local.Raft/ApplyLog",
+		FullMethod: "/parti.v1.Raft/ApplyLog",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RaftServer).ApplyLog(ctx, req.(*ApplyLogRequest))
@@ -288,7 +288,7 @@ func _Raft_ApplyLog_Handler(srv interface{}, ctx context.Context, dec func(inter
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Raft_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "local.Raft",
+	ServiceName: "parti.v1.Raft",
 	HandlerType: (*RaftServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -301,5 +301,5 @@ var Raft_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "localpb/service.proto",
+	Metadata: "parti/v1/service.proto",
 }

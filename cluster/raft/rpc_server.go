@@ -1,10 +1,10 @@
-package raftwrapper
+package raft
 
 import (
 	"context"
 	"time"
 
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
 )
 
 type RaftRpc struct {
@@ -15,14 +15,16 @@ func NewRaftRpcServer(node *Node) *RaftRpc {
 	return &RaftRpc{node: node}
 }
 
-func (r RaftRpc) GetPeerDetails(context.Context, *localpb.GetPeerDetailsRequest) (*localpb.GetPeerDetailsResponse, error) {
-	return &localpb.GetPeerDetailsResponse{
+var _ partipb.RaftServer = &RaftRpc{}
+
+func (r RaftRpc) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
+	return &partipb.GetPeerDetailsResponse{
 		ServerId:      r.node.ID,
 		DiscoveryPort: uint32(r.node.DiscoveryPort),
 	}, nil
 }
 
-func (r RaftRpc) ApplyLog(ctx context.Context, request *localpb.ApplyLogRequest) (*localpb.ApplyLogResponse, error) {
+func (r RaftRpc) ApplyLog(ctx context.Context, request *partipb.ApplyLogRequest) (*partipb.ApplyLogResponse, error) {
 	// TODO: pass this in?
 	timeout := time.Second
 	result := r.node.Raft.Apply(request.GetRequest(), timeout)
@@ -33,7 +35,5 @@ func (r RaftRpc) ApplyLog(ctx context.Context, request *localpb.ApplyLogRequest)
 	if err != nil {
 		return nil, err
 	}
-	return &localpb.ApplyLogResponse{Response: respPayload}, nil
+	return &partipb.ApplyLogResponse{Response: respPayload}, nil
 }
-
-var _ localpb.RaftServer = &RaftRpc{}

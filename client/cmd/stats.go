@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -30,8 +30,8 @@ var statsCMD = &cobra.Command{
 			// todo: don't panic here
 			panic(err)
 		}
-		client := localpb.NewClusteringClient(conn)
-		resp, err := client.Stats(context.Background(), &localpb.StatsRequest{})
+		client := partipb.NewClusteringClient(conn)
+		resp, err := client.Stats(context.Background(), &partipb.StatsRequest{})
 		if err != nil {
 			panic(err)
 		}
