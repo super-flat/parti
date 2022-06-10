@@ -34,7 +34,7 @@ func NewHashicorpDiscovery(port int) *HashicorpDiscovery {
 }
 
 // Start the discovery method and return a channel of node addresses ("host:RaftPort")
-func (d *HashicorpDiscovery) Start(_ string, _ int) (chan string, error) {
+func (d *HashicorpDiscovery) Start(_ string) (chan string, error) {
 	d.mtx.Lock()
 	defer d.mtx.Unlock()
 	if d.isStarted {

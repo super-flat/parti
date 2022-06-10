@@ -39,7 +39,7 @@ func NewMDNSDiscovery(raftPort int) *MDNSDiscovery {
 	}
 }
 
-func (d *MDNSDiscovery) Start(nodeID string, _ int) (chan string, error) {
+func (d *MDNSDiscovery) Start(nodeID string) (chan string, error) {
 	d.mtx.Lock()
 	defer d.mtx.Unlock()
 	if d.isStarted {

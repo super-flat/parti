@@ -157,7 +157,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
-	discoveryChan, err := n.DiscoveryMethod.Start(n.ID, n.RaftPort)
+	discoveryChan, err := n.DiscoveryMethod.Start(n.ID)
 	if err != nil {
 		return nil, err
 	}
