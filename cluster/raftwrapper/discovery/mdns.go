@@ -114,10 +114,28 @@ func (d *MDNSDiscovery) discovery() {
 				wg.Done()
 				return
 			default:
-				if err = resolver.Browse(ctx, mdnsServiceName, "local.", entries); err != nil {
+				// create an inner context and entries channel each
+				// time we call resolver.Browse because this library closes
+				// the provided entries channel internally, so if you run it
+				// multiple times, the 2nd run panics trying to close a closed
+				// channel...
+				innerCtx, innerCancel := context.WithCancel(ctx)
+				innerEntries := make(chan *zeroconf.ServiceEntry)
+				if err = resolver.Browse(innerCtx, mdnsServiceName, "local.", innerEntries); err != nil {
 					log.Printf("failed to write entries, %v", err)
 				}
-				time.Sleep(d.delayTime)
+				doLoop := true
+				for doLoop {
+					select {
+					case <-time.After(d.delayTime):
+						// if no records received within delayTime, restart
+						// the browser
+						doLoop = false
+					case entry := <-innerEntries:
+						entries <- entry
+					}
+				}
+				innerCancel()
 			}
 		}
 	}()
