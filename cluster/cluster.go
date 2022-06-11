@@ -10,17 +10,16 @@ import (
 	"time"
 
 	hraft "github.com/hashicorp/raft"
-	"github.com/troop-dev/go-kit/pkg/grpcclient"
-	"github.com/troop-dev/go-kit/pkg/grpcserver"
-	"github.com/troop-dev/go-kit/pkg/logging"
-	"google.golang.org/protobuf/types/known/wrapperspb"
-
 	"github.com/super-flat/parti/cluster/raftwrapper"
 	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	"github.com/troop-dev/go-kit/pkg/grpcclient"
+	"github.com/troop-dev/go-kit/pkg/grpcserver"
+	"github.com/troop-dev/go-kit/pkg/logging"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -106,7 +105,7 @@ func (n *Cluster) Start(ctx context.Context) error {
 	// register the clustering gRPC service on the node's grpc server
 	// so that they share a single gRPC port
 	clusteringServer := NewClusteringService(n)
-	localpb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
+	partipb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
 	// start the underlying raft node
 	_, err := n.node.Start()
 	if err != nil {
@@ -226,7 +225,7 @@ func (n *Cluster) PartitionMappings() map[uint32]string {
 }
 
 // Send a message to the node that owns a partition
-func (n *Cluster) Send(ctx context.Context, request *localpb.SendRequest) (*localpb.SendResponse, error) {
+func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -239,7 +238,7 @@ func (n *Cluster) Send(ctx context.Context, request *localpb.SendRequest) (*loca
 		if err != nil {
 			return nil, err
 		}
-		resp := &localpb.SendResponse{
+		resp := &partipb.SendResponse{
 			NodeId:      n.node.ID,
 			PartitionId: request.GetPartitionId(),
 			MessageId:   request.GetMessageId(),
@@ -259,7 +258,7 @@ func (n *Cluster) Send(ctx context.Context, request *localpb.SendRequest) (*loca
 }
 
 // Ping a partition and receive a response from the node that owns it
-func (n *Cluster) Ping(ctx context.Context, request *localpb.PingRequest) (*localpb.PingResponse, error) {
+func (n *Cluster) Ping(ctx context.Context, request *partipb.PingRequest) (*partipb.PingResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
 	if err != nil {
@@ -267,7 +266,7 @@ func (n *Cluster) Ping(ctx context.Context, request *localpb.PingRequest) (*loca
 	}
 	if ownerNodeID == n.node.ID {
 		logging.Debugf("received ping, answering locally, partition=%d", partitionID)
-		resp := &localpb.PingResponse{
+		resp := &partipb.PingResponse{
 			NodeId: n.node.ID,
 			Hops:   request.GetHops() + 1,
 		}
@@ -281,7 +280,7 @@ func (n *Cluster) Ping(ctx context.Context, request *localpb.PingRequest) (*loca
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
-	resp, err := getClient(peer, ctx).Ping(ctx, &localpb.PingRequest{
+	resp, err := getClient(peer, ctx).Ping(ctx, &partipb.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,
 	})
@@ -304,7 +303,7 @@ func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
-func getClient(p *raftwrapper.Peer, ctx context.Context) localpb.ClusteringClient {
+func getClient(p *raftwrapper.Peer, ctx context.Context) partipb.ClusteringClient {
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	conn, err := grpcclient.NewBuilder().
 		WithBlock().
@@ -315,6 +314,6 @@ func getClient(p *raftwrapper.Peer, ctx context.Context) localpb.ClusteringClien
 		// todo: don't panic here
 		panic(err)
 	}
-	client := localpb.NewClusteringClient(conn)
+	client := partipb.NewClusteringClient(conn)
 	return client
 }

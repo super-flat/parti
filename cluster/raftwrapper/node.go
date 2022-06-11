@@ -19,8 +19,8 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
-	"github.com/super-flat/parti/gen/localpb"
-	ggrpc "google.golang.org/grpc"
+	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -34,8 +34,8 @@ type Node struct {
 	DiscoveryPort    int
 	address          string
 	Raft             *raft.Raft
-	GrpcServer       *ggrpc.Server
-	DiscoveryMethod  discovery.DiscoveryMethod
+	GrpcServer       *grpc.Server
+	DiscoveryMethod  discovery.Discovery
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	mList            *memberlist.Memberlist
@@ -48,7 +48,7 @@ type Node struct {
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.Discovery) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeId := newNodeID(6)
@@ -59,7 +59,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	raftConf.LogLevel = "Info"
 
 	// create a stable store
-	// TODO: see why hasicorp advises against use in prod, maybe
+	// TODO: see why hashicorp advises against use in prod, maybe
 	// implement custom one locally... assuming they dont like that
 	// it's in memory, but our nodes are ephemeral and keys are low
 	// cardinality, so should be OK.
@@ -78,9 +78,9 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	// grpc transport
 	grpcTransport := transport.New(
 		raft.ServerAddress(addr),
-		[]ggrpc.DialOption{
+		[]grpc.DialOption{
 			// TODO: is this needed, or is insecure default?
-			ggrpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		},
 	)
 
@@ -99,7 +99,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	logger := log.Default()
 	logger.SetPrefix("[parti] ")
 
-	grpcServer := ggrpc.NewServer()
+	grpcServer := grpc.NewServer()
 
 	// initial stopped flag
 	var stopped uint32
@@ -161,7 +161,7 @@ func (n *Node) Start() (chan interface{}, error) {
 
 	// register custom raft RPC
 	raftRpcServer := NewRaftRpcServer(n)
-	localpb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
+	partipb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
 
 	// discovery method
 	discoveryChan, err := n.DiscoveryMethod.Start()
@@ -256,16 +256,16 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 	}
 }
 
-func (n *Node) getPeerDetails(peerAddress string) (*localpb.GetPeerDetailsResponse, error) {
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(peerAddress, ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
+	var opt grpc.DialOption = grpc.EmptyDialOption{}
+	conn, err := grpc.Dial(peerAddress, grpc.WithInsecure(), grpc.WithBlock(), opt)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	client := localpb.NewRaftClient(conn)
+	client := partipb.NewRaftClient(conn)
 
-	response, err := client.GetPeerDetails(context.Background(), &localpb.GetPeerDetailsRequest{})
+	response, err := client.GetPeerDetails(context.Background(), &partipb.GetPeerDetailsRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -341,15 +341,22 @@ func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
 	if !n.HasLeader() {
 		return nil, errors.New("unknown leader")
 	}
-	var opt ggrpc.DialOption = ggrpc.EmptyDialOption{}
-	conn, err := ggrpc.Dial(string(n.Raft.Leader()), ggrpc.WithInsecure(), ggrpc.WithBlock(), opt)
+	// get the leader address
+	leaderAddr, _ := n.Raft.LeaderWithID()
+	var opt grpc.DialOption = grpc.EmptyDialOption{}
+	conn, err := grpc.Dial(
+		string(leaderAddr),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		opt)
+
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	client := localpb.NewRaftClient(conn)
+	client := partipb.NewRaftClient(conn)
 
-	response, err := client.ApplyLog(context.Background(), &localpb.ApplyLogRequest{Request: payload})
+	response, err := client.ApplyLog(context.Background(), &partipb.ApplyLogRequest{Request: payload})
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +376,8 @@ func (n *Node) IsLeader() bool {
 // HasLeader returns true if the current node is aware of a cluster leader
 // including itself
 func (n *Node) HasLeader() bool {
-	return n.Raft.Leader() != ""
+	leaderAddr, _ := n.Raft.LeaderWithID()
+	return string(leaderAddr) != ""
 }
 
 // GetPeerSelf returns a Peer for the current node
@@ -433,7 +441,7 @@ func newNodeID(size int) string {
 }
 
 func RaftApplyDelete(n *Node, group string, key string) error {
-	request := &localpb.FsmRemoveRequest{Group: group, Key: key}
+	request := &partipb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.RaftApply(request, time.Second)
 	return err
 }
@@ -443,13 +451,13 @@ func RaftApplyPut(n *Node, group string, key string, value proto.Message) error 
 	if err != nil {
 		return err
 	}
-	request := &localpb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
+	request := &partipb.FsmPutRequest{Group: group, Key: key, Value: anyVal}
 	_, err = n.RaftApply(request, time.Second)
 	return err
 }
 
 func RaftApplyGet[T any](n *Node, group, key string) (T, error) {
-	request := &localpb.FsmGetRequest{Group: group, Key: key}
+	request := &partipb.FsmGetRequest{Group: group, Key: key}
 	result, err := n.RaftApply(request, time.Second)
 	var output T
 	if err != nil || result == nil {

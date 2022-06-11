@@ -14,13 +14,13 @@ func NewProtoSerializer() *ProtoSerializer {
 }
 
 // Serialize is used to serialize and data to a []byte
-func (l ProtoSerializer) Serialize(data interface{}) ([]byte, error) {
+func (serde ProtoSerializer) Serialize(data interface{}) ([]byte, error) {
 	if data == nil {
 		return nil, errors.New("empty data")
 	}
 	switch x := data.(type) {
 	case proto.Message:
-		result, err := l.SerializeProto(x)
+		result, err := serde.SerializeProto(x)
 		if err != nil {
 			return nil, err
 		}
@@ -31,18 +31,18 @@ func (l ProtoSerializer) Serialize(data interface{}) ([]byte, error) {
 }
 
 // Deserialize is used to deserialize []byte to interface{}
-func (l ProtoSerializer) Deserialize(data []byte) (interface{}, error) {
+func (serde ProtoSerializer) Deserialize(data []byte) (interface{}, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty data")
 	}
-	result, err := l.DeserializeProto(data)
+	result, err := serde.DeserializeProto(data)
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (l ProtoSerializer) SerializeProto(data proto.Message) ([]byte, error) {
+func (serde ProtoSerializer) SerializeProto(data proto.Message) ([]byte, error) {
 	if data == nil {
 		return nil, errors.New("cannot serialize empty proto data")
 	}
@@ -53,7 +53,7 @@ func (l ProtoSerializer) SerializeProto(data proto.Message) ([]byte, error) {
 	return proto.Marshal(anyMsg)
 }
 
-func (l ProtoSerializer) DeserializeProto(data []byte) (proto.Message, error) {
+func (serde ProtoSerializer) DeserializeProto(data []byte) (proto.Message, error) {
 	if data == nil || len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty bytes into proto")
 	}
