@@ -2,8 +2,8 @@ package fsm
 
 import (
 	"errors"
-	"fmt"
 	"io"
+	"log"
 	"sync"
 
 	"github.com/hashicorp/raft"
@@ -32,14 +32,14 @@ func NewProtoFsm() *ProtoFsm {
 // produce the same result on all peers in the cluster.
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
-func (p *ProtoFsm) Apply(log *raft.Log) interface{} {
-	if log == nil || log.Data == nil {
-		fmt.Println("Raft received nil log apply!")
+func (p *ProtoFsm) Apply(raftLog *raft.Log) interface{} {
+	if raftLog == nil || raftLog.Data == nil {
+		log.Println("Raft received nil log apply!")
 		return nil
 	}
-	switch log.Type {
+	switch raftLog.Type {
 	case raft.LogCommand:
-		msg, err := p.ser.DeserializeProto(log.Data)
+		msg, err := p.ser.DeserializeProto(raftLog.Data)
 		if err != nil {
 			return err
 		}

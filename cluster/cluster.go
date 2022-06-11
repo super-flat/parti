@@ -206,7 +206,7 @@ func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
 
 // setPartition assigns a partition to a node
 func (n *Cluster) setPartition(partitionID uint32, nodeID string) error {
-	fmt.Printf("assigning partition (%d) to node (%s)\n", partitionID, nodeID)
+	log.Printf("assigning partition (%d) to node (%s)", partitionID, nodeID)
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	value := wrapperspb.String(nodeID)
 	return raftwrapper.RaftApplyPut(n.node, partitionsGroupName, key, value)
