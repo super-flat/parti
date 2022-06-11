@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,10 +43,11 @@ type Node struct {
 	stopped          *uint32
 	logger           *log.Logger
 	stoppedCh        chan interface{}
-	snapshotEnabled  bool
+	mtx              *sync.Mutex
+	isStarted        bool
 }
 
-// NewNode returns an EasyRaft node
+// NewNode returns an raft node
 func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.DiscoveryMethod) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
@@ -96,7 +97,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 
 	// logging
 	logger := log.Default()
-	logger.SetPrefix("[EasyRaft] ")
+	logger.SetPrefix("[parti] ")
 
 	grpcServer := ggrpc.NewServer()
 
@@ -116,15 +117,20 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		logger:           logger,
 		stopped:          &stopped,
 		GrpcServer:       grpcServer,
+		isStarted:        false,
+		mtx:              &sync.Mutex{},
 	}, nil
 }
 
 // Start starts the Node and returns a channel that indicates, that the node has been stopped properly
 func (n *Node) Start() (chan interface{}, error) {
 	n.logger.Printf("Starting Raft Node, ID=%s", n.ID)
-	// set stopped as false
-	if atomic.LoadUint32(n.stopped) == 1 {
-		atomic.StoreUint32(n.stopped, 0)
+
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	if n.isStarted {
+		return nil, errors.New("already started")
 	}
 
 	// raft server
@@ -187,41 +193,42 @@ func (n *Node) Start() (chan interface{}, error) {
 	n.logger.Printf("Node started on port %d and discovery port %d\n", n.RaftPort, n.DiscoveryPort)
 	n.stoppedCh = make(chan interface{})
 
+	n.isStarted = true
+
 	return n.stoppedCh, nil
 }
 
 // Stop stops the node and notifies on stopped channel returned in Start
 func (n *Node) Stop() {
-	if atomic.LoadUint32(n.stopped) == 0 {
-		atomic.StoreUint32(n.stopped, 1)
-		if n.snapshotEnabled {
-			n.logger.Println("Creating snapshot...")
-			err := n.Raft.Snapshot().Error()
-			if err != nil {
-				n.logger.Println("Failed to create snapshot!")
-			}
-		}
-		n.logger.Println("Stopping Node...")
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+	if n.isStarted {
+		// snapshot state
+		// if err := n.Raft.Snapshot().Error(); err != nil {
+		// 	n.logger.Println("Failed to create snapshot!")
+		// }
+		// shut down discovery method
 		n.DiscoveryMethod.Stop()
-		err := n.mList.Leave(10 * time.Second)
-		if err != nil {
+		if err := n.mList.Leave(10 * time.Second); err != nil {
 			n.logger.Printf("Failed to leave from discovery: %q\n", err.Error())
 		}
-		err = n.mList.Shutdown()
-		if err != nil {
+		if err := n.mList.Shutdown(); err != nil {
 			n.logger.Printf("Failed to shutdown discovery: %q\n", err.Error())
 		}
-		n.logger.Println("Discovery stopped")
-		err = n.Raft.Shutdown().Error()
-		if err != nil {
+		// shut down raft
+		if err := n.Raft.Shutdown().Error(); err != nil {
 			n.logger.Printf("Failed to shutdown Raft: %q\n", err.Error())
 		}
+		// shut down gRPC
 		n.logger.Println("Raft stopped")
 		n.GrpcServer.GracefulStop()
-		n.logger.Println("Raft Server stopped")
-		n.logger.Println("Node Stopped!")
+		n.isStarted = false
 		n.stoppedCh <- true
 	}
+}
+
+func (n *Node) AwaitShutdown() {
+	<-n.stoppedCh
 }
 
 // handleDiscoveredNodes handles the discovered Node additions

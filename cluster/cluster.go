@@ -89,8 +89,8 @@ func (n *Cluster) Stop(ctx context.Context) {
 		go n.node.Stop()
 		// waits for easy raft shutdown
 		// TODO: sometimes this never receives, so disabling this for now
-		// <-n.stoppedCh
-		// log.Printf("Completed node shutdown")
+		n.node.AwaitShutdown()
+		log.Printf("Completed node shutdown")
 	}
 	n.isStarted = false
 }

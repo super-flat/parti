@@ -26,8 +26,4 @@ go run ./example send --partition 9 --addr 0.0.0.0:50001 hello world
 ```
 
 ### TODO
-- use hashicorp raft directly (instead of easyraft)
-- consolidate to single clustering gRPC service
-- remove use of boltDB and use an in-mem snapshot store
-- implement custom FSM and use proto serialization to send messages
 - (optional) open long-lived streams between nodes to reduce number of connections between nodes (right now, each forwarded message gets its own gRPC connection)
