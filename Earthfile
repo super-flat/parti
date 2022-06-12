@@ -1,116 +1,82 @@
 VERSION 0.6
 
-FROM ghcr.io/troop-dev/go-kit:1.18.0-0.6.4
+FROM golang:1.18.2-alpine
 
-all:
-    BUILD +lint
-    BUILD +test
-    BUILD +build
-    BUILD +build-arm-v7
-    BUILD +helm
+golang-base:
+    WORKDIR /app
 
+    # install gcc dependencies into alpine for CGO
+    RUN apk add gcc musl-dev curl git openssh
 
-install-deps:
+    # install docker tools
+    # https://docs.docker.com/engine/install/debian/
+    RUN apk add --update --no-cache docker
+
+    # install the go generator plugins
+    RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+    RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+    RUN export PATH="$PATH:$(go env GOPATH)/bin"
+
+    # install buf from source
+    RUN GO111MODULE=on GOBIN=/usr/local/bin go install github.com/bufbuild/buf/cmd/buf@v1.4.0
+
+    # install linter
+    # binary will be $(go env GOPATH)/bin/golangci-lint
+    RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.46.2
+    RUN ls -la $(which golangci-lint)
+
+protogen:
+    FROM +golang-base
+
+    # copy the proto files to generate
+    COPY --dir proto/ ./
+    COPY buf.work.yaml buf.gen.yaml ./
+    # generate the pbs
+    RUN buf generate \
+        --template buf.gen.yaml \
+        --path proto/parti
+
+    # save artifact to
+    SAVE ARTIFACT pb pb AS LOCAL pb
+
+deps:
+    WORKDIR /app
+
 	# add git to known hosts
 	RUN mkdir -p /root/.ssh && \
 		chmod 700 /root/.ssh && \
 		ssh-keyscan github.com >> /root/.ssh/known_hosts
 	RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
-	# add dependencies
-	COPY go.mod go.sum .
-	RUN --ssh go mod download -x
 
-add-code:
-	FROM +install-deps
-	# add code
-	COPY --dir app .
+    COPY go.mod go.sum ./
+
+    RUN --ssh go mod download
+    SAVE ARTIFACT go.mod AS LOCAL go.mod
+    SAVE ARTIFACT go.sum AS LOCAL go.sum
+
+code:
+    FROM +deps
+
+    WORKDIR /app
+
+    COPY --dir +protogen/partipb ./
+    COPY --dir cluster ./
+
+    SAVE ARTIFACT /app /files
 
 vendor:
-	FROM +add-code
-	RUN --ssh go mod vendor
+    FROM +code
 
-compile:
-	FROM +vendor
-	ARG GOOS=linux
-	ARG GOARCH
-	ARG GOARM
-	RUN go build -mod=vendor -o bin/server ./app/main.go
-	SAVE ARTIFACT bin/server /bin/server
-	# SAVE IMAGE --push raft-poc-cache:compile
+    WORKDIR /app
 
-build:
-	FROM alpine:3.13.6
-	RUN apk add --no-cache libc6-compat
-	ARG VERSION=dev
-	WORKDIR /app
-	COPY +compile/bin/server .
-	RUN chmod +x ./server
-    # RUN mkdir .db && chown 777 ./.db
-    # TODO: use nobody
-	# USER nobody
-    USER root
-	# ENTRYPOINT ./server run
-	SAVE IMAGE --push raft-poc:${VERSION}
+    RUN go mod tidy && go mod vendor
 
-build-arm-v7:
-	# THIS TARGET IS ONLY FOR BUILDING ARM64 IMAGES FROM AN
-	# AMD64 HOST (Github Actions)
-	FROM --platform=linux/arm64 alpine:3.13.6
-	RUN apk add --no-cache libc6-compat
-	ARG VERSION=dev
-	WORKDIR /app
-	COPY --platform=linux/amd64 --build-arg GOARCH=arm --build-arg GOARM=7 +compile/bin/server .
-	RUN chmod +x ./server
-	USER nobody
-	ENTRYPOINT ./server run
-	SAVE IMAGE --push ghcr.io/troop-dev/files-api:${VERSION}
-
-test:
-    FROM +vendor
-
-	RUN go test -mod=vendor ./app/... -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./app/...
-
-    SAVE ARTIFACT coverage.out AS LOCAL coverage.out
-    SAVE IMAGE --push ghcr.io/troop-dev/files-api-cache:test
+    SAVE ARTIFACT /app /files
 
 lint:
-	FROM +vendor
-	# Runs golangci-lint with settings:
-	RUN golangci-lint run --timeout 10m --skip-dirs-use-default
+    FROM +vendor
 
-helm:
-	FROM alpine/helm:3.7.2
-	ARG VERSION="0.0.0"
-	# add code
-	WORKDIR /app
-	RUN mkdir ./out
-	COPY --dir helm .
-	# build package in out dir
-	RUN helm package ./helm/files-api \
-		--version $VERSION \
-		--app-version $VERSION \
-		-d ./out/
+    COPY .golangci.yml ./
 
-	ENV HELM_EXPERIMENTAL_OCI=1
-	ARG HELM_REPO=https://ghcr.io
-	# login to helm repo
-	RUN --push \
-		--secret GH_USER=+secrets/GH_USER \
-		--secret GH_TOKEN=+secrets/GH_TOKEN \
-		echo $GH_TOKEN  | \
-		helm registry login $HELM_REPO -u $GH_USER --password-stdin
-	# push to repo
-	RUN --push find ./out -name *.tgz | \
-		xargs -I {} -n1 helm push {} oci://ghcr.io/troop-dev/helm
-
-protogen:
-	FROM +install-deps
-	# copy the proto files to generate
-	COPY --dir proto/ ./
-	COPY buf.work.yaml buf.gen.yaml ./
-	# generate the pbs
-	RUN buf generate \
-		--template buf.gen.yaml \
-		--path proto/local/localpb
-	# save artifact to
-	SAVE ARTIFACT gen gen AS LOCAL gen
+    # Runs golangci-lint with settings:
+    RUN golangci-lint run -v

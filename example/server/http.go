@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/super-flat/parti/cluster"
-	"github.com/super-flat/parti/gen/localpb"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -72,7 +72,7 @@ func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// read the message
 	msg, _ := anypb.New(wrapperspb.String(r.URL.Query().Get("message")))
 	// make a request
-	sendRequest := &localpb.SendRequest{
+	sendRequest := &partipb.SendRequest{
 		PartitionId: partitionID,
 		MessageId:   uuid.New().String(),
 		Message:     msg,

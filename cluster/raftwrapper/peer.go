@@ -13,7 +13,6 @@ type Peer struct {
 }
 
 func NewPeer(id string, raftAddr string) *Peer {
-
 	addrParts := strings.Split(raftAddr, ":")
 	if len(addrParts) != 2 {
 		panic(fmt.Errorf("cant parse raft addr '%s'", raftAddr))

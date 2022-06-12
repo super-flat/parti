@@ -1,7 +1,7 @@
 package discovery
 
-// DiscoveryMethod gives the interface to perform automatic Node discovery
-type DiscoveryMethod interface {
+// Discovery gives the interface to perform automatic Node discovery
+type Discovery interface {
 	// Start the discovery method, which returns a channel that notifies of
 	// new nodes discovered (format "IP:RaftPort")
 	Start() (chan string, error)
