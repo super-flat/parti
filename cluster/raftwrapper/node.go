@@ -51,10 +51,10 @@ type Node struct {
 func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.Discovery) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
-	nodeId := newNodeID(6)
+	nodeID := newNodeID(6)
 
 	raftConf := raft.DefaultConfig()
-	raftConf.LocalID = raft.ServerID(nodeId)
+	raftConf.LocalID = raft.ServerID(nodeID)
 	raftLogCacheSize := 512
 	raftConf.LogLevel = "Info"
 
@@ -87,7 +87,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	// memberlist config
 	mlConfig := memberlist.DefaultWANConfig()
 	mlConfig.BindPort = discoveryPort
-	mlConfig.Name = fmt.Sprintf("%s:%d", nodeId, raftPort)
+	mlConfig.Name = fmt.Sprintf("%s:%d", nodeID, raftPort)
 
 	// raft server
 	raftServer, err := raft.NewRaft(raftConf, raftFsm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
@@ -96,6 +96,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	}
 
 	// logging
+	// TODO refactor loggin in the next PR
 	logger := log.Default()
 	logger.SetPrefix("[parti] ")
 
@@ -105,7 +106,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	var stopped uint32
 
 	return &Node{
-		ID:               nodeId,
+		ID:               nodeID,
 		RaftPort:         raftPort,
 		address:          addr,
 		Raft:             raftServer,
@@ -148,7 +149,7 @@ func (n *Node) Start() (chan interface{}, error) {
 		return nil, err
 	}
 
-	// memberlist discovery
+	// members list discovery
 	n.discoveryConfig.Events = n
 	list, err := memberlist.Create(n.discoveryConfig)
 	if err != nil {
@@ -160,8 +161,8 @@ func (n *Node) Start() (chan interface{}, error) {
 	n.TransportManager.Register(n.GrpcServer)
 
 	// register custom raft RPC
-	raftRpcServer := NewRaftRpcServer(n)
-	partipb.RegisterRaftServer(n.GrpcServer, raftRpcServer)
+	raftRPCServer := NewRaftRPCServer(n)
+	partipb.RegisterRaftServer(n.GrpcServer, raftRPCServer)
 
 	// discovery method
 	discoveryChan, err := n.DiscoveryMethod.Start()
@@ -170,21 +171,21 @@ func (n *Node) Start() (chan interface{}, error) {
 	}
 	go n.handleDiscoveredNodes(discoveryChan)
 
-	// serve grpc
-	// grpc server
-	grpcListen, err := net.Listen("tcp", n.address)
+	// set up the tpc listener
+	listener, err := net.Listen("tcp", n.address)
 	if err != nil {
 		log.Fatal(err)
 	}
+	// serve grpc
 	go func() {
-		if err := n.GrpcServer.Serve(grpcListen); err != nil {
+		if err := n.GrpcServer.Serve(listener); err != nil {
 			n.logger.Fatal(err)
 		}
 	}()
 
 	// handle interruption
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT, syscall.SIGKILL)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT, syscall.SIGTERM)
 	go func() {
 		<-sigs
 		n.Stop()
@@ -236,10 +237,10 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 	for peerAddr := range discoveryChan {
 		detailsResp, err := n.getPeerDetails(peerAddr)
 		if err == nil {
-			serverId := detailsResp.ServerId
+			serverID := detailsResp.ServerId
 			needToAddNode := true
 			for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-				if server.ID == raft.ServerID(serverId) || string(server.Address) == peerAddr {
+				if server.ID == raft.ServerID(serverID) || string(server.Address) == peerAddr {
 					needToAddNode = false
 					break
 				}
@@ -258,14 +259,18 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 
 func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
 	var opt grpc.DialOption = grpc.EmptyDialOption{}
-	conn, err := grpc.Dial(peerAddress, grpc.WithInsecure(), grpc.WithBlock(), opt)
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx,
+		peerAddress,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(), opt)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() // nolint
 	client := partipb.NewRaftClient(conn)
 
-	response, err := client.GetPeerDetails(context.Background(), &partipb.GetPeerDetailsRequest{})
+	response, err := client.GetPeerDetails(ctx, &partipb.GetPeerDetailsRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -277,10 +282,10 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 // and capable of joining the Node to the raft cluster
 func (n *Node) NotifyJoin(node *memberlist.Node) {
 	nameParts := strings.Split(node.Name, ":")
-	nodeId, nodePort := nameParts[0], nameParts[1]
+	nodeID, nodePort := nameParts[0], nameParts[1]
 	nodeAddr := fmt.Sprintf("%s:%s", node.Addr, nodePort)
 	if err := n.Raft.VerifyLeader().Error(); err == nil {
-		result := n.Raft.AddVoter(raft.ServerID(nodeId), raft.ServerAddress(nodeAddr), 0, 0)
+		result := n.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(nodeAddr), 0, 0)
 		if result.Error() != nil {
 			log.Println(result.Error().Error())
 		}
@@ -291,9 +296,9 @@ func (n *Node) NotifyJoin(node *memberlist.Node) {
 // it will remove the unavailable Node from the Raft cluster
 func (n *Node) NotifyLeave(node *memberlist.Node) {
 	if n.DiscoveryMethod.SupportsNodeAutoRemoval() {
-		nodeId := strings.Split(node.Name, ":")[0]
+		nodeID := strings.Split(node.Name, ":")[0]
 		if err := n.Raft.VerifyLeader().Error(); err == nil {
-			result := n.Raft.RemoveServer(raft.ServerID(nodeId), 0, 0)
+			result := n.Raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 			if result.Error() != nil {
 				log.Println(result.Error().Error())
 			}
@@ -341,10 +346,11 @@ func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
 	if !n.HasLeader() {
 		return nil, errors.New("unknown leader")
 	}
+	ctx := context.Background()
 	// get the leader address
 	leaderAddr, _ := n.Raft.LeaderWithID()
 	var opt grpc.DialOption = grpc.EmptyDialOption{}
-	conn, err := grpc.Dial(
+	conn, err := grpc.DialContext(ctx,
 		string(leaderAddr),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -353,10 +359,10 @@ func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() // nolint
 	client := partipb.NewRaftClient(conn)
 
-	response, err := client.ApplyLog(context.Background(), &partipb.ApplyLogRequest{Request: payload})
+	response, err := client.ApplyLog(ctx, &partipb.ApplyLogRequest{Request: payload})
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +441,7 @@ func newNodeID(size int) string {
 	rand.Seed(time.Now().UnixNano())
 	b := make([]byte, size)
 	for i := range b {
-		b[i] = nodeIDCharacters[rand.Intn(len(nodeIDCharacters))]
+		b[i] = nodeIDCharacters[rand.Intn(len(nodeIDCharacters))] // nolint
 	}
 	return string(b)
 }

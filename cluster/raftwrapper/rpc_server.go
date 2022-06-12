@@ -7,24 +7,24 @@ import (
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
-type RaftRpc struct {
+type RaftRPC struct {
 	node *Node
 }
 
-var _ partipb.RaftServer = &RaftRpc{}
+var _ partipb.RaftServer = &RaftRPC{}
 
-func NewRaftRpcServer(node *Node) *RaftRpc {
-	return &RaftRpc{node: node}
+func NewRaftRPCServer(node *Node) *RaftRPC {
+	return &RaftRPC{node: node}
 }
 
-func (r RaftRpc) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
+func (r RaftRPC) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
 	return &partipb.GetPeerDetailsResponse{
 		ServerId:      r.node.ID,
 		DiscoveryPort: uint32(r.node.DiscoveryPort),
 	}, nil
 }
 
-func (r RaftRpc) ApplyLog(ctx context.Context, request *partipb.ApplyLogRequest) (*partipb.ApplyLogResponse, error) {
+func (r RaftRPC) ApplyLog(ctx context.Context, request *partipb.ApplyLogRequest) (*partipb.ApplyLogResponse, error) {
 	// TODO: pass this in?
 	timeout := time.Second
 	result := r.node.Raft.Apply(request.GetRequest(), timeout)

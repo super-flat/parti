@@ -28,7 +28,7 @@ type MDNSDiscovery struct {
 
 func NewMDNSDiscovery(raftPort int) *MDNSDiscovery {
 	rand.Seed(time.Now().UnixNano())
-	delayTime := time.Duration(rand.Intn(5)+1) * time.Second
+	delayTime := time.Duration(rand.Intn(5)+1) * time.Second // nolint
 	return &MDNSDiscovery{
 		delayTime:     delayTime,
 		discoveryChan: make(chan string),

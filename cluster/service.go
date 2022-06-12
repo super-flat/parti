@@ -3,14 +3,16 @@ package cluster
 import (
 	"context"
 
+	"github.com/super-flat/parti/cluster/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
-	"github.com/troop-dev/go-kit/pkg/logging"
-	"google.golang.org/grpc"
 )
 
 type ClusteringService struct {
 	cluster *Cluster
 }
+
+// ensure implements complete interface
+var _ partipb.ClusteringServer = ClusteringService{}
 
 func NewClusteringService(cluster *Cluster) *ClusteringService {
 	return &ClusteringService{cluster: cluster}
@@ -45,10 +47,3 @@ func (c ClusteringService) Send(ctx context.Context, request *partipb.SendReques
 	logging.Debugf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
 	return c.cluster.Send(ctx, request)
 }
-
-func (c *ClusteringService) RegisterService(server *grpc.Server) {
-	partipb.RegisterClusteringServer(server, c)
-}
-
-// ensure implements complete interface
-var _ partipb.ClusteringServer = ClusteringService{}

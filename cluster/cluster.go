@@ -4,21 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"sync"
 	"time"
 
 	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/logging"
 	"github.com/super-flat/parti/cluster/raftwrapper"
 	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
-	"github.com/troop-dev/go-kit/pkg/grpcclient"
-	"github.com/troop-dev/go-kit/pkg/grpcserver"
-	"github.com/troop-dev/go-kit/pkg/logging"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -36,7 +35,7 @@ type Cluster struct {
 	mtx       *sync.RWMutex
 	isStarted bool
 
-	grpcServer grpcserver.Server
+	grpcServer *grpc.Server
 
 	peerObservations <-chan hraft.Observation
 
@@ -77,25 +76,25 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 }
 
 // Stop shuts down this node
-func (n *Cluster) Stop(ctx context.Context) {
+func (n *Cluster) Stop(context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
-		log.Printf("Shutting down node")
+		logging.Info("Shutting down node")
 		if n.grpcServer != nil {
-			n.grpcServer.Stop(ctx)
+			n.grpcServer.GracefulStop()
 		}
 		go n.node.Stop()
 		// waits for easy raft shutdown
 		// TODO: sometimes this never receives, so disabling this for now
 		n.node.AwaitShutdown()
-		log.Printf("Completed node shutdown")
+		logging.Info("Completed node shutdown")
 	}
 	n.isStarted = false
 }
 
 // Start the cluster node
-func (n *Cluster) Start(ctx context.Context) error {
+func (n *Cluster) Start(context.Context) error {
 	// acquire lock to ensure node is only started once
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -148,9 +147,13 @@ func (n *Cluster) handlePeerObservations() {
 		if ok && n.node.IsLeader() {
 			if peerObservation.Removed {
 				// remove from the list of ports
-				raftwrapper.RaftApplyDelete(n.node, portsGroupName, string(peerObservation.Peer.ID))
+				if err := raftwrapper.RaftApplyDelete(n.node, portsGroupName, string(peerObservation.Peer.ID)); err != nil {
+					logging.Error(err.Error())
+				}
 				// remove from the list of partitions
-				raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID))
+				if err := raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID)); err != nil {
+					logging.Error(err.Error())
+				}
 			}
 		}
 	}
@@ -158,7 +161,7 @@ func (n *Cluster) handlePeerObservations() {
 
 // leaderRebalance allows the leader node to delegate partitions to its
 // cluster peers, considering nodes that have left and new nodes that
-// have joined, with a goal of evenly distributring the work.
+// have joined, with a goal of evenly distributing the work.
 func (n *Cluster) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
@@ -168,7 +171,7 @@ func (n *Cluster) leaderRebalance() {
 			for partition := uint32(0); partition < n.partitionCount; partition++ {
 				owner, err := n.getPartitionNode(partition)
 				if err != nil {
-					log.Default().Printf("failed to get owner, partition=%d, %v", partition, err)
+					logging.Errorf("failed to get owner, partition=%d, %v", partition, err)
 				}
 				if owner != "" {
 					currentPartitions[partition] = owner
@@ -189,7 +192,9 @@ func (n *Cluster) leaderRebalance() {
 			for partitionID, newPeerID := range rebalancedOutput {
 				currentPeerID, isMapped := currentPartitions[partitionID]
 				if !isMapped || currentPeerID != newPeerID {
-					n.setPartition(partitionID, newPeerID)
+					if err := n.setPartition(partitionID, newPeerID); err != nil {
+						logging.Error(err.Error())
+					}
 				}
 			}
 		}
@@ -205,7 +210,7 @@ func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
 
 // setPartition assigns a partition to a node
 func (n *Cluster) setPartition(partitionID uint32, nodeID string) error {
-	log.Printf("assigning partition (%d) to node (%s)", partitionID, nodeID)
+	logging.Infof("assigning partition (%d) to node (%s)", partitionID, nodeID)
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	value := wrapperspb.String(nodeID)
 	return raftwrapper.RaftApplyPut(n.node, partitionsGroupName, key, value)
@@ -254,7 +259,7 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding send, node=%s, messageID=%s, partition=%d", peer.ID, request.GetMessageId(), partitionID)
-	return getClient(peer, ctx).Send(ctx, request)
+	return getClient(ctx, peer).Send(ctx, request)
 }
 
 // Ping a partition and receive a response from the node that owns it
@@ -280,7 +285,7 @@ func (n *Cluster) Ping(ctx context.Context, request *partipb.PingRequest) (*part
 		return nil, errors.New("peer not ready for messages")
 	}
 	logging.Debugf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
-	resp, err := getClient(peer, ctx).Ping(ctx, &partipb.PingRequest{
+	resp, err := getClient(ctx, peer).Ping(ctx, &partipb.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,
 	})
@@ -303,17 +308,22 @@ func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
-func getClient(p *raftwrapper.Peer, ctx context.Context) partipb.ClusteringClient {
+func getClient(ctx context.Context, p *raftwrapper.Peer) partipb.ClusteringClient {
+	// make the grpc client address
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
-	conn, err := grpcclient.NewBuilder().
-		WithBlock().
-		WithInsecure().
-		GetConn(ctx, grpcAddr)
-
+	// set up the grpc client connection
+	conn, err := grpc.DialContext(ctx,
+		grpcAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		grpc.EmptyDialOption{},
+	)
+	// handle the error of the connection
 	if err != nil {
 		// todo: don't panic here
 		panic(err)
 	}
+	// create the client connection and return it
 	client := partipb.NewClusteringClient(conn)
 	return client
 }

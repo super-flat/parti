@@ -66,18 +66,18 @@ func ComputeRebalance(numPartitions uint32, currentAssignments map[uint32]string
 		highPeer := peers[j]
 		// if the lower peer has the ideal number of partitions, continue
 		if lowPeer.PartitionIDs.Length() >= idealBalance {
-			i += 1
+			i++
 			continue
 		}
 		// let the heaviest peers have more partitions than the
 		// lightest until you cross the "remainder"
 		maxBalance := idealBalance
 		if len(peers)-j <= int(numPartitions)%len(peers) {
-			maxBalance += 1
+			maxBalance++
 		}
 		// if the highest peer has the ideal number of partitions, continue
 		if highPeer.PartitionIDs.Length() == maxBalance {
-			j -= 1
+			j--
 			continue
 		}
 		// take a partition from the highest peer and give to the lowest peer
