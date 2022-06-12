@@ -37,7 +37,7 @@ protogen:
         --path proto/parti
 
     # save artifact to
-    SAVE ARTIFACT partipb partipb AS LOCAL partipb
+    SAVE ARTIFACT pb pb AS LOCAL pb
 
 deps:
     WORKDIR /app

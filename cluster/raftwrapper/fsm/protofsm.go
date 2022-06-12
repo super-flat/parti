@@ -8,7 +8,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
-	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 )
 

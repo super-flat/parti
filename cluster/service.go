@@ -3,7 +3,7 @@ package cluster
 import (
 	"context"
 
-	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"github.com/troop-dev/go-kit/pkg/logging"
 	"google.golang.org/grpc"
 )

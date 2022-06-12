@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/super-flat/parti/cluster"
-	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"

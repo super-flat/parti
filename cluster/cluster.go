@@ -15,7 +15,7 @@ import (
 	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
-	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"github.com/troop-dev/go-kit/pkg/grpcclient"
 	"github.com/troop-dev/go-kit/pkg/grpcserver"
 	"github.com/troop-dev/go-kit/pkg/logging"

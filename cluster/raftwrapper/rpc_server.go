@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	partipb "github.com/super-flat/parti/partipb/parti/v1"
+	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
 type RaftRpc struct {
