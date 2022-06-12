@@ -85,6 +85,8 @@ func (k *KubernetesDiscovery) Stop() {
 	}
 }
 
+// discovery runs in a loop to discover new pod peers
+// TODO: pass in an interface for easier testing!
 func (k *KubernetesDiscovery) discovery(clientSet *kubernetes.Clientset) {
 	// map of active peers and when we reported them
 	peerCache := make(map[string]time.Time)
