@@ -2,8 +2,8 @@ package cluster
 
 import (
 	"context"
+	"log"
 
-	"github.com/super-flat/parti/cluster/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
@@ -20,7 +20,7 @@ func NewClusteringService(cluster *Cluster) *ClusteringService {
 
 // Ping method is for testing node liveness
 func (c ClusteringService) Ping(ctx context.Context, request *partipb.PingRequest) (*partipb.PingResponse, error) {
-	logging.Debugf("received ping %d", request.GetPartitionId())
+	log.Printf("received ping %d", request.GetPartitionId())
 	return c.cluster.Ping(ctx, request)
 }
 
@@ -44,6 +44,6 @@ func (c ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*parti
 }
 
 func (c ClusteringService) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
-	logging.Debugf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
+	log.Printf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
 	return c.cluster.Send(ctx, request)
 }
