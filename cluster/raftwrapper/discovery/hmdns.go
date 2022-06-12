@@ -83,7 +83,7 @@ func (d *HashicorpDiscovery) findPeers() {
 
 	// Create the mDNS server, defer shutdown
 	server, _ := mdns.NewServer(&mdns.Config{Zone: service})
-	defer server.Shutdown()
+	defer server.Shutdown() // nolint
 
 	// Make a channel for results and start listening
 	entriesCh := make(chan *mdns.ServiceEntry, 4)

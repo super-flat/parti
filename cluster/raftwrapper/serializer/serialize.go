@@ -54,7 +54,7 @@ func (serde ProtoSerializer) SerializeProto(data proto.Message) ([]byte, error) 
 }
 
 func (serde ProtoSerializer) DeserializeProto(data []byte) (proto.Message, error) {
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty bytes into proto")
 	}
 	var anyMsg anypb.Any

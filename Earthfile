@@ -40,17 +40,13 @@ protogen:
     SAVE ARTIFACT pb pb AS LOCAL pb
 
 deps:
-    WORKDIR /app
+    FROM +golang-base
 
-	# add git to known hosts
-	RUN mkdir -p /root/.ssh && \
-		chmod 700 /root/.ssh && \
-		ssh-keyscan github.com >> /root/.ssh/known_hosts
-	RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
+    WORKDIR /app
 
     COPY go.mod go.sum ./
 
-    RUN --ssh go mod download
+    RUN go mod download
     SAVE ARTIFACT go.mod AS LOCAL go.mod
     SAVE ARTIFACT go.sum AS LOCAL go.sum
 
@@ -59,8 +55,9 @@ code:
 
     WORKDIR /app
 
-    COPY --dir +protogen/partipb ./
+    COPY --dir +protogen/pb ./
     COPY --dir cluster ./
+
 
     SAVE ARTIFACT /app /files
 
