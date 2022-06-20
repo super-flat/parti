@@ -29,3 +29,5 @@ go run ./example send --partition 9 --addr 0.0.0.0:50001 hello world
 
 ### TODO
 - (optional) open long-lived streams between nodes to reduce number of connections between nodes (right now, each forwarded message gets its own gRPC connection)
+- k8s discovery needs to recover faster when nodes go down. right now, the heartbeats fail for a long time, but the nodes don't get evicted from the cluster. looks like this is configurable in the memberlist, but we need to investigate more.
+- k8s discovery docs should have a sample role/permission necessary for listing peer pods
