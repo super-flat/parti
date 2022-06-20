@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/super-flat/parti/cluster"
+	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 )
 
 func Run() {
@@ -23,11 +24,15 @@ func Run() {
 	handler := &ExampleHandler{}
 	// run the raft node
 	numPartitions := uint32(10)
+	podLabels := map[string]string{"app": "parti"}
+	discoveryService := discovery.NewKubernetesDiscovery("default", podLabels, "raft")
+
 	partiNode := cluster.NewCluster(
 		cfg.RaftPort,
 		cfg.DiscoveryPort,
 		handler,
 		numPartitions,
+		discoveryService,
 	)
 	if err := partiNode.Start(ctx); err != nil {
 		panic(err)

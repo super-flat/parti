@@ -77,3 +77,17 @@ lint:
 
     # Runs golangci-lint with settings:
     RUN golangci-lint run -v
+
+k8s-base:
+    FROM +vendor
+
+    COPY --dir example .
+    RUN go mod tidy && go mod vendor
+    RUN go build -o example ./example
+    SAVE ARTIFACT ./example /
+
+k8s-build:
+    FROM alpine:3.13.6
+    COPY +k8s-base/example .
+    ENTRYPOINT ./example server
+    SAVE IMAGE parti-example:dev

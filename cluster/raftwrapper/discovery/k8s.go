@@ -112,13 +112,15 @@ func (k *KubernetesDiscovery) discovery(clientSet *kubernetes.Clientset) {
 					for _, container := range pod.Spec.Containers {
 						for _, port := range container.Ports {
 							if port.Name == k.portName {
+								peerID := pod.GetName()
 								peerAddr := fmt.Sprintf("%s:%d", pod.Status.PodIP, port.ContainerPort)
-								seenAt, seenBefore := peerCache[peerAddr]
+								seenAt, seenBefore := peerCache[peerID]
 								// if it's new OR seen a while ago, report it to the
 								// discovery channel
 								if !seenBefore || time.Since(seenAt) > k.cacheTime {
-									log.Printf("found k8s peer %s", peerAddr)
-									peerCache[peerAddr] = time.Now()
+									log.Printf("found k8s peer %s at %s", peerID, peerAddr)
+									log.Printf("peer labels %v", pod.Labels)
+									peerCache[peerID] = time.Now()
 									// lock to prevent panic if discovery channel
 									// is shutting down
 									if k.mtx.TryLock() && k.isStarted {

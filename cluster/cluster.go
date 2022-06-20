@@ -42,14 +42,9 @@ type Cluster struct {
 	msgHandler Handler
 }
 
-func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32) *Cluster {
+func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32, discoveryService discovery.Discovery) *Cluster {
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
-
-	// select discovery method
-	// TODO: make configurable (k8s, docker, etc)
-	discoveryService := discovery.NewMDNSDiscovery(int(raftPort))
-	// discoveryService := discovery.NewHashicorpDiscovery(int(raftPort))
 
 	ser := serializer.NewProtoSerializer()
 
