@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/super-flat/parti/cluster"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -27,6 +28,11 @@ func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *an
 		resp = fmt.Sprintf("responding, partition=%d, type=%s", partitionID, msg.GetTypeUrl())
 	}
 	return anypb.New(wrapperspb.String(resp))
+}
+
+func (e *ExampleHandler) ShutdownPartition(ctx context.Context, partitionID uint32) error {
+	log.Printf("shutting down partition %d", partitionID)
+	return nil
 }
 
 var _ cluster.Handler = &ExampleHandler{}
