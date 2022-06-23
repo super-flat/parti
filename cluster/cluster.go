@@ -162,6 +162,15 @@ func (n *Cluster) leaderRebalance() {
 	for {
 		time.Sleep(time.Second * 3)
 		if n.node.IsLeader() {
+			// get active peers
+			peerMap := map[string]*raftwrapper.Peer{}
+			activePeerIDs := make([]string, 0)
+			for _, peer := range n.node.GetPeers() {
+				if peer.IsReady() {
+					peerMap[peer.ID] = peer
+					activePeerIDs = append(activePeerIDs, peer.ID)
+				}
+			}
 			// get current partitions
 			currentPartitions := make(map[uint32]string, n.partitionCount)
 			for partition := uint32(0); partition < n.partitionCount; partition++ {
@@ -173,22 +182,15 @@ func (n *Cluster) leaderRebalance() {
 					currentPartitions[partition] = owner
 				}
 			}
-			// get active peers
-			peerMap := map[string]*raftwrapper.Peer{}
-			activePeerIDs := make([]string, 0)
-			for _, peer := range n.node.GetPeers() {
-				if peer.IsReady() {
-					peerMap[peer.ID] = peer
-					activePeerIDs = append(activePeerIDs, peer.ID)
-				}
-			}
 			// compute rebalance
 			rebalancedOutput := rebalance.ComputeRebalance(n.partitionCount, currentPartitions, activePeerIDs)
 			// apply any rebalance changes to the cluster
 			for partitionID, newPeerID := range rebalancedOutput {
 				currentPeerID, isMapped := currentPartitions[partitionID]
-				// if not mapped, immediately assign
-				if !isMapped {
+				// determine if this peer is online
+				_, currentPeerIsOnline := peerMap[currentPeerID]
+				// if not mapped or the peer is offline, immediately assign
+				if !isMapped || !currentPeerIsOnline {
 					if err := n.setPartition(partitionID, newPeerID, false); err != nil {
 						// TODO decide whether to panic or not
 						log.Println(err.Error())
@@ -243,7 +245,12 @@ func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
 
 // setPartition assigns a partition to a node
 func (n *Cluster) setPartition(partitionID uint32, nodeID string, paused bool) error {
-	log.Printf("assigning partition (%d) to node (%s)", partitionID, nodeID)
+	if paused {
+		log.Printf("pausing partition (%d) on node (%s)", partitionID, nodeID)
+	} else {
+		log.Printf("assigning partition (%d) to node (%s)", partitionID, nodeID)
+	}
+
 	key := strconv.FormatUint(uint64(partitionID), 10)
 
 	value := &partipb.PartitionOwnership{
