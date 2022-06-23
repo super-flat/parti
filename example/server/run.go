@@ -24,8 +24,10 @@ func Run() {
 	handler := &ExampleHandler{}
 	// run the raft node
 	numPartitions := uint32(10)
-	podLabels := map[string]string{"app": "parti"}
-	discoveryService := discovery.NewKubernetesDiscovery("default", podLabels, "raft")
+	// define discovery
+	// podLabels := map[string]string{"app": "parti"}
+	// discoveryService := discovery.NewKubernetesDiscovery("default", podLabels, "raft")
+	discoveryService := discovery.NewMDNSDiscovery(int(cfg.RaftPort))
 
 	partiNode := cluster.NewCluster(
 		cfg.RaftPort,

@@ -8,11 +8,12 @@ import (
 )
 
 type ClusteringService struct {
+	partipb.UnimplementedClusteringServer
 	cluster *Cluster
 }
 
 // ensure implements complete interface
-var _ partipb.ClusteringServer = ClusteringService{}
+var _ partipb.ClusteringServer = &ClusteringService{}
 
 func NewClusteringService(cluster *Cluster) *ClusteringService {
 	return &ClusteringService{cluster: cluster}
@@ -24,7 +25,7 @@ func (c ClusteringService) Ping(ctx context.Context, request *partipb.PingReques
 	return c.cluster.Ping(ctx, request)
 }
 
-func (c ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*partipb.StatsResponse, error) {
+func (c *ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*partipb.StatsResponse, error) {
 	resp := &partipb.StatsResponse{
 		NodeId:          c.cluster.node.ID,
 		IsLeader:        c.cluster.node.IsLeader(),
@@ -46,4 +47,8 @@ func (c ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*parti
 func (c ClusteringService) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
 	log.Printf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
 	return c.cluster.Send(ctx, request)
+}
+
+func (c ClusteringService) ShutdownPartition(ctx context.Context, request *partipb.ShutdownPartitionRequest) (*partipb.ShutdownPartitionResponse, error) {
+	return c.cluster.ShutdownPartition(ctx, request)
 }

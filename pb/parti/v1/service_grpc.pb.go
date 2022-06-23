@@ -28,6 +28,9 @@ type ClusteringClient interface {
 	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error)
+	// ShutdownPartition tells a node to shut down a specific partition in
+	// preparation for a rebalance
+	ShutdownPartition(ctx context.Context, in *ShutdownPartitionRequest, opts ...grpc.CallOption) (*ShutdownPartitionResponse, error)
 }
 
 type clusteringClient struct {
@@ -65,6 +68,15 @@ func (c *clusteringClient) Send(ctx context.Context, in *SendRequest, opts ...gr
 	return out, nil
 }
 
+func (c *clusteringClient) ShutdownPartition(ctx context.Context, in *ShutdownPartitionRequest, opts ...grpc.CallOption) (*ShutdownPartitionResponse, error) {
+	out := new(ShutdownPartitionResponse)
+	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/ShutdownPartition", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClusteringServer is the server API for Clustering service.
 // All implementations should embed UnimplementedClusteringServer
 // for forward compatibility
@@ -75,6 +87,9 @@ type ClusteringServer interface {
 	Stats(context.Context, *StatsRequest) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(context.Context, *SendRequest) (*SendResponse, error)
+	// ShutdownPartition tells a node to shut down a specific partition in
+	// preparation for a rebalance
+	ShutdownPartition(context.Context, *ShutdownPartitionRequest) (*ShutdownPartitionResponse, error)
 }
 
 // UnimplementedClusteringServer should be embedded to have forward compatible implementations.
@@ -89,6 +104,9 @@ func (UnimplementedClusteringServer) Stats(context.Context, *StatsRequest) (*Sta
 }
 func (UnimplementedClusteringServer) Send(context.Context, *SendRequest) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Send not implemented")
+}
+func (UnimplementedClusteringServer) ShutdownPartition(context.Context, *ShutdownPartitionRequest) (*ShutdownPartitionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ShutdownPartition not implemented")
 }
 
 // UnsafeClusteringServer may be embedded to opt out of forward compatibility for this service.
@@ -156,6 +174,24 @@ func _Clustering_Send_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Clustering_ShutdownPartition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShutdownPartitionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusteringServer).ShutdownPartition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/parti.v1.Clustering/ShutdownPartition",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusteringServer).ShutdownPartition(ctx, req.(*ShutdownPartitionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Clustering_ServiceDesc is the grpc.ServiceDesc for Clustering service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -174,6 +210,10 @@ var Clustering_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Send",
 			Handler:    _Clustering_Send_Handler,
+		},
+		{
+			MethodName: "ShutdownPartition",
+			Handler:    _Clustering_ShutdownPartition_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

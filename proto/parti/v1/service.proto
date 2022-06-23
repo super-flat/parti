@@ -12,6 +12,9 @@ service Clustering {
   rpc Stats(StatsRequest) returns (StatsResponse);
   // Send forwards messages to nodes based on a partition ID
   rpc Send(SendRequest) returns (SendResponse);
+  // ShutdownPartition tells a node to shut down a specific partition in
+  // preparation for a rebalance
+  rpc ShutdownPartition(ShutdownPartitionRequest) returns (ShutdownPartitionResponse);
 }
 
 service Raft {
@@ -20,6 +23,14 @@ service Raft {
   // ApplyLog applies the provided request on the server if it is the leader
   rpc ApplyLog(ApplyLogRequest) returns (ApplyLogResponse);
 };
+
+message ShutdownPartitionRequest {
+  uint32 partition_id = 1;
+}
+
+message ShutdownPartitionResponse {
+  bool success = 1;
+}
 
 message ApplyLogRequest {
   bytes request = 1;

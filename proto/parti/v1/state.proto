@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package parti.v1;
+
+message PartitionOwnership {
+    uint32 partition_id = 1;
+    string owner = 2;
+    bool is_paused = 3;
+}
