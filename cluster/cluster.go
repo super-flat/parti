@@ -173,13 +173,13 @@ func (n *Cluster) leaderRebalance() {
 			}
 			// get current partitions
 			currentPartitions := make(map[uint32]string, n.partitionCount)
-			for partition := uint32(0); partition < n.partitionCount; partition++ {
-				owner, err := n.getPartitionNode(partition)
+			for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
+				partition, err := n.getPartition(partitionID)
 				if err != nil {
-					log.Printf("failed to get owner, partition=%d, %v", partition, err)
+					log.Printf("failed to get owner, partition=%d, %v", partitionID, err)
 				}
-				if owner != "" {
-					currentPartitions[partition] = owner
+				if partition.GetOwner() != "" {
+					currentPartitions[partitionID] = partition.GetOwner()
 				}
 			}
 			// compute rebalance
@@ -238,9 +238,15 @@ func (n *Cluster) leaderRebalance() {
 
 // getPartitionNode returns the node that owns a partition
 func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
+	val, err := n.getPartition(partitionID)
+	return val.GetOwner(), err
+}
+
+// getPartition returns the current partition mapping from local state
+func (n *Cluster) getPartition(partitionID uint32) (*partipb.PartitionOwnership, error) {
 	key := strconv.FormatUint(uint64(partitionID), 10)
 	val, err := raftGetLocally[*partipb.PartitionOwnership](n, partitionsGroupName, key)
-	return val.GetOwner(), err
+	return val, err
 }
 
 // setPartition assigns a partition to a node
@@ -300,10 +306,22 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 // Send a message to the node that owns a partition
 func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
 	partitionID := request.GetPartitionId()
-	ownerNodeID, err := n.getPartitionNode(partitionID)
-	if err != nil {
-		return nil, err
+	// try to get the partition, loop if it is paused
+	// TODO: introduce some backoff here, perhaps with a max timeout
+	var partition *partipb.PartitionOwnership
+	var err error
+	for {
+		partition, err = n.getPartition(partitionID)
+		if err != nil {
+			return nil, err
+		}
+		if !partition.GetIsPaused() {
+			break
+		}
+		log.Printf("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner())
+		time.Sleep(time.Second)
 	}
+	ownerNodeID := partition.GetOwner()
 	// if partition owned by this node, answer locally
 	if ownerNodeID == n.node.ID {
 		log.Printf("received local send, partition=%d, id=%s", partitionID, request.GetMessageId())

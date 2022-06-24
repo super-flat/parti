@@ -430,7 +430,7 @@ func (n *Node) GetPeer(peerID string) (*Peer, error) {
 		}
 	}
 	if raftAddr == "" {
-		return nil, errors.New("could not find raft peer")
+		return nil, fmt.Errorf("could not find raft peer (%s)", peerID)
 	}
 	return NewPeer(peerID, raftAddr), nil
 }

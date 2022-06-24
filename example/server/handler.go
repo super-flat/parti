@@ -32,6 +32,7 @@ func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *an
 
 func (e *ExampleHandler) ShutdownPartition(ctx context.Context, partitionID uint32) error {
 	log.Printf("shutting down partition %d", partitionID)
+	// time.Sleep(time.Second * 10)
 	return nil
 }
 
