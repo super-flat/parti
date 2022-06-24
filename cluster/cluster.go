@@ -229,7 +229,7 @@ func (n *Cluster) leaderRebalance() {
 						continue
 					}
 					// unpause the partition
-					n.setPartition(partitionID, newPeerID, false)
+					_ = n.setPartition(partitionID, newPeerID, false)
 				}
 			}
 		}
