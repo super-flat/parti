@@ -37,6 +37,7 @@ type Cluster struct {
 	grpcServer *grpc.Server
 
 	peerObservations <-chan hraft.Observation
+	leaderChanges    <-chan hraft.Observation
 
 	msgHandler Handler
 }
@@ -107,6 +108,9 @@ func (n *Cluster) Start(context.Context) error {
 	// handle peer observations
 	n.registerPeerObserver()
 	go n.handlePeerObservations()
+	// handle leader changes
+	n.registerLeaderObserver()
+	go n.handleLeaderObservations()
 	// do leader things
 	go n.leaderRebalance()
 	// complete startup
@@ -121,7 +125,7 @@ func (n *Cluster) registerPeerObserver() {
 		return
 	}
 	observerCh := make(chan hraft.Observation, 100)
-	filterfn := func(o *hraft.Observation) bool {
+	filterFn := func(o *hraft.Observation) bool {
 		switch o.Data.(type) {
 		case hraft.PeerObservation:
 			return true
@@ -129,7 +133,7 @@ func (n *Cluster) registerPeerObserver() {
 			return false
 		}
 	}
-	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterfn))
+	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterFn))
 	n.node.Raft.RegisterObserver(observer)
 	n.peerObservations = observerCh
 }
@@ -152,6 +156,38 @@ func (n *Cluster) handlePeerObservations() {
 				}
 			}
 		}
+	}
+}
+
+// registerLeaderObserver subscribes to leadership changes on the raft
+// cluster
+func (n *Cluster) registerLeaderObserver() {
+	if n.leaderChanges != nil {
+		return
+	}
+	leaderCh := make(chan hraft.Observation, 10)
+	filterFn := func(o *hraft.Observation) bool {
+		switch o.Data.(type) {
+		case hraft.LeaderObservation:
+			return true
+		default:
+			return false
+		}
+	}
+	observer := hraft.NewObserver(leaderCh, true, hraft.FilterFn(filterFn))
+	n.node.Raft.RegisterObserver(observer)
+	n.leaderChanges = leaderCh
+}
+
+// handleLeaderObservations handles each leadership change from the
+// observation channel
+func (n *Cluster) handleLeaderObservations() {
+	for observation := range n.leaderChanges {
+		leaderObv, ok := observation.Data.(hraft.LeaderObservation)
+		if !ok {
+			continue
+		}
+		log.Printf("new leader: (%s) at (%s)", leaderObv.LeaderID, leaderObv.LeaderAddr)
 	}
 }
 

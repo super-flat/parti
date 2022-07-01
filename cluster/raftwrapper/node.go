@@ -39,7 +39,6 @@ type Node struct {
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	mList            *memberlist.Memberlist
-	discoveryConfig  *memberlist.Config
 	stopped          *uint32
 	logger           *log.Logger
 	stoppedCh        chan interface{}
@@ -84,11 +83,6 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		},
 	)
 
-	// memberlist config
-	mlConfig := memberlist.DefaultWANConfig()
-	mlConfig.BindPort = discoveryPort
-	mlConfig.Name = fmt.Sprintf("%s:%d", nodeID, raftPort)
-
 	// raft server
 	raftServer, err := raft.NewRaft(raftConf, raftFsm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
 	if err != nil {
@@ -114,7 +108,6 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		Serializer:       serializer,
 		DiscoveryPort:    discoveryPort,
 		DiscoveryMethod:  discoveryMethod,
-		discoveryConfig:  mlConfig,
 		logger:           logger,
 		stopped:          &stopped,
 		GrpcServer:       grpcServer,
@@ -150,8 +143,11 @@ func (n *Node) Start() (chan interface{}, error) {
 	}
 
 	// members list discovery
-	n.discoveryConfig.Events = n
-	list, err := memberlist.Create(n.discoveryConfig)
+	mlConfig := memberlist.DefaultWANConfig()
+	mlConfig.BindPort = n.DiscoveryPort
+	mlConfig.Name = fmt.Sprintf("%s:%d", n.ID, n.RaftPort)
+	mlConfig.Events = n
+	list, err := memberlist.Create(mlConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -282,10 +278,10 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 // and capable of joining the Node to the raft cluster
 func (n *Node) NotifyJoin(node *memberlist.Node) {
 	nameParts := strings.Split(node.Name, ":")
-	nodeID, nodePort := nameParts[0], nameParts[1]
-	nodeAddr := fmt.Sprintf("%s:%s", node.Addr, nodePort)
-	if err := n.Raft.VerifyLeader().Error(); err == nil {
-		result := n.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(nodeAddr), 0, 0)
+	nodeID, nodeRaftPort := nameParts[0], nameParts[1]
+	nodeRaftAddr := fmt.Sprintf("%s:%s", node.Addr, nodeRaftPort)
+	if n.IsLeader() {
+		result := n.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(nodeRaftAddr), 0, 0)
 		if result.Error() != nil {
 			log.Println(result.Error().Error())
 		}
@@ -297,7 +293,7 @@ func (n *Node) NotifyJoin(node *memberlist.Node) {
 func (n *Node) NotifyLeave(node *memberlist.Node) {
 	if n.DiscoveryMethod.SupportsNodeAutoRemoval() {
 		nodeID := strings.Split(node.Name, ":")[0]
-		if err := n.Raft.VerifyLeader().Error(); err == nil {
+		if n.IsLeader() {
 			result := n.Raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 			if result.Error() != nil {
 				log.Println(result.Error().Error())
