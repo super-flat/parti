@@ -28,6 +28,8 @@ type ClusteringClient interface {
 	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error)
+	// StartPartition tells a node to start a specific partition
+	StartPartition(ctx context.Context, in *StartPartitionRequest, opts ...grpc.CallOption) (*StartPartitionResponse, error)
 	// ShutdownPartition tells a node to shut down a specific partition in
 	// preparation for a rebalance
 	ShutdownPartition(ctx context.Context, in *ShutdownPartitionRequest, opts ...grpc.CallOption) (*ShutdownPartitionResponse, error)
@@ -68,6 +70,15 @@ func (c *clusteringClient) Send(ctx context.Context, in *SendRequest, opts ...gr
 	return out, nil
 }
 
+func (c *clusteringClient) StartPartition(ctx context.Context, in *StartPartitionRequest, opts ...grpc.CallOption) (*StartPartitionResponse, error) {
+	out := new(StartPartitionResponse)
+	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/StartPartition", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *clusteringClient) ShutdownPartition(ctx context.Context, in *ShutdownPartitionRequest, opts ...grpc.CallOption) (*ShutdownPartitionResponse, error) {
 	out := new(ShutdownPartitionResponse)
 	err := c.cc.Invoke(ctx, "/parti.v1.Clustering/ShutdownPartition", in, out, opts...)
@@ -87,6 +98,8 @@ type ClusteringServer interface {
 	Stats(context.Context, *StatsRequest) (*StatsResponse, error)
 	// Send forwards messages to nodes based on a partition ID
 	Send(context.Context, *SendRequest) (*SendResponse, error)
+	// StartPartition tells a node to start a specific partition
+	StartPartition(context.Context, *StartPartitionRequest) (*StartPartitionResponse, error)
 	// ShutdownPartition tells a node to shut down a specific partition in
 	// preparation for a rebalance
 	ShutdownPartition(context.Context, *ShutdownPartitionRequest) (*ShutdownPartitionResponse, error)
@@ -104,6 +117,9 @@ func (UnimplementedClusteringServer) Stats(context.Context, *StatsRequest) (*Sta
 }
 func (UnimplementedClusteringServer) Send(context.Context, *SendRequest) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Send not implemented")
+}
+func (UnimplementedClusteringServer) StartPartition(context.Context, *StartPartitionRequest) (*StartPartitionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartPartition not implemented")
 }
 func (UnimplementedClusteringServer) ShutdownPartition(context.Context, *ShutdownPartitionRequest) (*ShutdownPartitionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ShutdownPartition not implemented")
@@ -174,6 +190,24 @@ func _Clustering_Send_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Clustering_StartPartition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartPartitionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusteringServer).StartPartition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/parti.v1.Clustering/StartPartition",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusteringServer).StartPartition(ctx, req.(*StartPartitionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Clustering_ShutdownPartition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ShutdownPartitionRequest)
 	if err := dec(in); err != nil {
@@ -210,6 +244,10 @@ var Clustering_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Send",
 			Handler:    _Clustering_Send_Handler,
+		},
+		{
+			MethodName: "StartPartition",
+			Handler:    _Clustering_StartPartition_Handler,
 		},
 		{
 			MethodName: "ShutdownPartition",
