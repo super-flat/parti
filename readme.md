@@ -2,7 +2,7 @@
 
 [![build](https://github.com/super-flat/parti/actions/workflows/main.yml/badge.svg)](https://github.com/super-flat/parti/actions/workflows/main.yml)
 
-Parti provides cluster sharding on top of hashicorp raft. Send a message for a given partition to any node in the cluster, and the message will be forwarded to the node that owns that partition. The cluster will automatically rebalance as nodes are added and removed.
+Parti provides a simple, partitioned messaging framework across a cluster of nodes. Send a message for a given partition to any node in the cluster, and the message will be forwarded to the node that owns that partition. The cluster will automatically rebalance as nodes are added and removed. Under the hood, Parti uses [hashicorp/raft](https://github.com/hashicorp/raft) to distribute work and manage membership.
 
 ### SAMPLE
 ```sh
