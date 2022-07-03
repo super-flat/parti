@@ -30,8 +30,13 @@ func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *an
 	return anypb.New(wrapperspb.String(resp))
 }
 
+func (e *ExampleHandler) StartPartition(ctx context.Context, partitionID uint32) error {
+	log.Printf("starting partition (%d)", partitionID)
+	return nil
+}
+
 func (e *ExampleHandler) ShutdownPartition(ctx context.Context, partitionID uint32) error {
-	log.Printf("shutting down partition %d", partitionID)
+	log.Printf("shutting down partition (%d)", partitionID)
 	// time.Sleep(time.Second * 10)
 	return nil
 }
