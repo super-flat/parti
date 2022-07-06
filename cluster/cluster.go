@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	syslog "log"
 	"strconv"
 	"sync"
 	"time"
 
 	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/log"
 	"github.com/super-flat/parti/cluster/raftwrapper"
 	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
@@ -40,6 +41,7 @@ type Cluster struct {
 	leaderChanges    <-chan hraft.Observation
 
 	msgHandler Handler
+	logger     log.Logger
 }
 
 func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32, discoveryService discovery.Discovery) *Cluster {
@@ -48,6 +50,11 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 
 	ser := serializer.NewProtoSerializer()
 
+	// setup default logger
+	slog := syslog.Default()
+	slog.SetPrefix("[parti] ")
+	logger := log.WrapSysLog(slog)
+
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
 		int(raftPort),
@@ -55,6 +62,7 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 		raftFsm,
 		ser,
 		discoveryService,
+		logger,
 	)
 	if err != nil {
 		panic(err)
@@ -67,7 +75,14 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 		isStarted:      false,
 		msgHandler:     msgHandler,
 		partitionCount: partitionCount,
+		logger:         logger,
 	}
+}
+
+// Set custom logger
+func (n *Cluster) WithLogger(logger log.Logger) {
+	n.logger = logger
+	n.node.WithLogger(logger)
 }
 
 // Stop shuts down this node
@@ -75,7 +90,7 @@ func (n *Cluster) Stop(context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
-		log.Println("Shutting down node")
+		n.logger.Info("Shutting down node")
 		if n.grpcServer != nil {
 			n.grpcServer.GracefulStop()
 		}
@@ -83,7 +98,7 @@ func (n *Cluster) Stop(context.Context) {
 		// waits for easy raft shutdown
 		// TODO: sometimes this never receives, so disabling this for now
 		n.node.AwaitShutdown()
-		log.Println("Completed node shutdown")
+		n.logger.Info("Completed node shutdown")
 	}
 	n.isStarted = false
 }
@@ -147,12 +162,12 @@ func (n *Cluster) handlePeerObservations() {
 				// remove from the list of ports
 				if err := raftwrapper.RaftApplyDelete(n.node, portsGroupName, string(peerObservation.Peer.ID)); err != nil {
 					// TODO whether to exit the system
-					log.Println(err.Error())
+					n.logger.Error(err.Error())
 				}
 				// remove from the list of partitions
 				if err := raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID)); err != nil {
 					// TODO whether to exit the system
-					log.Println(err.Error())
+					n.logger.Error(err.Error())
 				}
 			}
 		}
@@ -187,7 +202,7 @@ func (n *Cluster) handleLeaderObservations() {
 		if !ok {
 			continue
 		}
-		log.Printf("new leader: (%s) at (%s)", leaderObv.LeaderID, leaderObv.LeaderAddr)
+		n.logger.Infof("new leader: (%s) at (%s)", leaderObv.LeaderID, leaderObv.LeaderAddr)
 	}
 }
 
@@ -212,7 +227,7 @@ func (n *Cluster) leaderRebalance() {
 			for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
 				partition, err := n.getPartition(partitionID)
 				if err != nil {
-					log.Printf("failed to get owner, partition=%d, %v", partitionID, err)
+					n.logger.Infof("failed to get owner, partition=%d, %v", partitionID, err)
 				}
 				if partition.GetOwner() != "" {
 					currentPartitions[partitionID] = partition.GetOwner()
@@ -229,14 +244,14 @@ func (n *Cluster) leaderRebalance() {
 				if !isMapped || !currentPeerIsOnline {
 					if err := n.setPartition(partitionID, newPeerID, false); err != nil {
 						// TODO decide whether to panic or not
-						log.Println(err.Error())
+						n.logger.Error(err.Error())
 					}
 				} else if currentPeerID != newPeerID {
 					// otherwise, do 2-phase shutdown
 					// first, pause the partition
 					err := n.setPartition(partitionID, currentPeerID, true)
 					if err != nil {
-						log.Println(err.Error())
+						n.logger.Error(err.Error())
 						// rollback
 						// TODO: make this smarter
 						_ = n.setPartition(partitionID, currentPeerID, false)
@@ -258,7 +273,7 @@ func (n *Cluster) leaderRebalance() {
 						// TODO: this means that the shutdown grpc call failed. when a node goes down,
 						// this call will definitely fail. think about if there are other reasons this
 						// might fail, and perhaps have some kind of retry here?
-						log.Printf("failed to shutdown partition %d, %v", partitionID, err)
+						n.logger.Warnf("failed to shutdown partition %d, %v", partitionID, err)
 					} else if !resp.GetSuccess() {
 						// TODO: make this rollback smarter
 						_ = n.setPartition(partitionID, currentPeerID, false)
@@ -288,9 +303,9 @@ func (n *Cluster) getPartition(partitionID uint32) (*partipb.PartitionOwnership,
 // setPartition assigns a partition to a node
 func (n *Cluster) setPartition(partitionID uint32, nodeID string, paused bool) error {
 	if paused {
-		log.Printf("pausing partition (%d) on node (%s)", partitionID, nodeID)
+		n.logger.Infof("pausing partition (%d) on node (%s)", partitionID, nodeID)
 	} else {
-		log.Printf("assigning partition (%d) to node (%s)", partitionID, nodeID)
+		n.logger.Infof("assigning partition (%d) to node (%s)", partitionID, nodeID)
 	}
 
 	key := strconv.FormatUint(uint64(partitionID), 10)
@@ -326,12 +341,12 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 	// if this node is not the owner, we cannot shut down that partition.
 	// TODO: decide if error would be better here
 	if ownerNodeID != n.node.ID {
-		log.Printf("received partition shutdown for another node %s, partition=%d", ownerNodeID, request.GetPartitionId())
+		n.logger.Infof("received partition shutdown for another node %s, partition=%d", ownerNodeID, request.GetPartitionId())
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
 	// attempt to shut down the partition using the provided handler
 	if err := n.msgHandler.ShutdownPartition(ctx, partitionID); err != nil {
-		log.Printf("failed to shut down partition %d, %v", partitionID, err)
+		n.logger.Warnf("failed to shut down partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
@@ -354,13 +369,13 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 		if !partition.GetIsPaused() {
 			break
 		}
-		log.Printf("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner())
+		n.logger.Infof("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner())
 		time.Sleep(time.Second)
 	}
 	ownerNodeID := partition.GetOwner()
 	// if partition owned by this node, answer locally
 	if ownerNodeID == n.node.ID {
-		log.Printf("received local send, partition=%d, id=%s", partitionID, request.GetMessageId())
+		n.logger.Infof("received local send, partition=%d, id=%s", partitionID, request.GetMessageId())
 		handlerResp, err := n.msgHandler.Handle(ctx, partitionID, request.GetMessage())
 		if err != nil {
 			return nil, err
@@ -380,7 +395,7 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 	if !peer.IsReady() {
 		return nil, errors.New("peer not ready for messages")
 	}
-	log.Printf("forwarding send, node=%s, messageID=%s, partition=%d", peer.ID, request.GetMessageId(), partitionID)
+	n.logger.Infof("forwarding send, node=%s, messageID=%s, partition=%d", peer.ID, request.GetMessageId(), partitionID)
 	return getClient(ctx, peer).Send(ctx, request)
 }
 
@@ -392,7 +407,7 @@ func (n *Cluster) Ping(ctx context.Context, request *partipb.PingRequest) (*part
 		return nil, err
 	}
 	if ownerNodeID == n.node.ID {
-		log.Printf("received ping, answering locally, partition=%d", partitionID)
+		n.logger.Infof("received ping, answering locally, partition=%d", partitionID)
 		resp := &partipb.PingResponse{
 			NodeId: n.node.ID,
 			Hops:   request.GetHops() + 1,
@@ -406,7 +421,7 @@ func (n *Cluster) Ping(ctx context.Context, request *partipb.PingRequest) (*part
 	if !peer.IsReady() {
 		return nil, errors.New("peer not ready for messages")
 	}
-	log.Printf("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
+	n.logger.Infof("forwarding ping, node=%s, partition=%d", peer.ID, partitionID)
 	resp, err := getClient(ctx, peer).Ping(ctx, &partipb.PingRequest{
 		PartitionId: partitionID,
 		Hops:        request.GetHops() + 1,

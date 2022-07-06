@@ -2,26 +2,27 @@ package cluster
 
 import (
 	"context"
-	"log"
 
+	"github.com/super-flat/parti/cluster/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
 type ClusteringService struct {
 	partipb.UnimplementedClusteringServer
 	cluster *Cluster
+	logger  log.Logger
 }
 
 // ensure implements complete interface
 var _ partipb.ClusteringServer = &ClusteringService{}
 
 func NewClusteringService(cluster *Cluster) *ClusteringService {
-	return &ClusteringService{cluster: cluster}
+	return &ClusteringService{cluster: cluster, logger: cluster.logger}
 }
 
 // Ping method is for testing node liveness
 func (c ClusteringService) Ping(ctx context.Context, request *partipb.PingRequest) (*partipb.PingResponse, error) {
-	log.Printf("received ping %d", request.GetPartitionId())
+	c.logger.Infof("received ping %d", request.GetPartitionId())
 	return c.cluster.Ping(ctx, request)
 }
 
@@ -45,7 +46,7 @@ func (c *ClusteringService) Stats(context.Context, *partipb.StatsRequest) (*part
 }
 
 func (c ClusteringService) Send(ctx context.Context, request *partipb.SendRequest) (*partipb.SendResponse, error) {
-	log.Printf("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
+	c.logger.Infof("received send, msgID=%s, partition=%d", request.GetMessageId(), request.GetPartitionId())
 	return c.cluster.Send(ctx, request)
 }
 
