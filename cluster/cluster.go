@@ -229,7 +229,7 @@ func (n *Cluster) leaderRebalance() {
 				if err != nil {
 					n.logger.Infof("failed to get owner, partition=%d, %v", partitionID, err)
 				}
-				if partition.GetOwner() != "" {
+				if partition.GetOwner() != "" && partition.AcceptingMessages {
 					currentPartitions[partitionID] = partition.GetOwner()
 				}
 			}
@@ -238,33 +238,28 @@ func (n *Cluster) leaderRebalance() {
 			// apply any rebalance changes to the cluster
 			for partitionID, newPeerID := range rebalancedOutput {
 				currentPeerID, isMapped := currentPartitions[partitionID]
+				ctx := context.Background()
 				// determine if this peer is online
 				_, currentPeerIsOnline := peerMap[currentPeerID]
-				// if not mapped or the peer is offline, immediately assign
-				if !isMapped || !currentPeerIsOnline {
-					if err := n.setPartition(partitionID, newPeerID, false); err != nil {
-						// TODO decide whether to panic or not
-						n.logger.Error(err.Error())
-					}
-				} else if currentPeerID != newPeerID {
-					// otherwise, do 2-phase shutdown
+				// if the partition is already on the correct node, continue
+				if currentPeerID == newPeerID {
+					continue
+				}
+				// if it is mapped and the peer is online, shut down the partition
+				if isMapped && currentPeerIsOnline {
+					// do 2-phase shutdown
 					// first, pause the partition
-					err := n.setPartition(partitionID, currentPeerID, true)
+					err := n.setPartition(partitionID, currentPeerID, false)
 					if err != nil {
 						n.logger.Error(err.Error())
-						// rollback
-						// TODO: make this smarter
-						_ = n.setPartition(partitionID, currentPeerID, false)
 						continue
 					}
 					// then, invoke shutdown on owner
 					currentPeer, err := n.node.GetPeer(currentPeerID)
 					if err != nil {
 						// TODO: make this rollback smarter
-						_ = n.setPartition(partitionID, currentPeerID, false)
 						continue
 					}
-					ctx := context.Background()
 					shutdownRequest := &partipb.ShutdownPartitionRequest{
 						PartitionId: partitionID,
 					}
@@ -274,13 +269,52 @@ func (n *Cluster) leaderRebalance() {
 						// this call will definitely fail. think about if there are other reasons this
 						// might fail, and perhaps have some kind of retry here?
 						n.logger.Warnf("failed to shutdown partition %d, %v", partitionID, err)
+						continue
 					} else if !resp.GetSuccess() {
-						// TODO: make this rollback smarter
-						_ = n.setPartition(partitionID, currentPeerID, false)
 						continue
 					}
-					// unpause the partition
-					_ = n.setPartition(partitionID, newPeerID, false)
+				}
+				// now, assign a new owner, but don't accept new messages
+				if err := n.setPartition(partitionID, newPeerID, false); err != nil {
+					// TODO: make this smarter
+					log.Println(err.Error())
+					continue
+				}
+				// then, invoke startup on new owner
+				newPeer, err := n.node.GetPeer(newPeerID)
+				if err != nil {
+					// TODO: make this smarter
+					continue
+				}
+				newPeerClient := getClient(ctx, newPeer)
+				// wait until the peer has synced
+				for {
+					// use the stats endpoint to look up the partition
+					// mapping on the new node
+					statsResp, err := newPeerClient.Stats(ctx, &partipb.StatsRequest{})
+					remoteOwner, exists := statsResp.GetPartitionOwners()[partitionID]
+					if err == nil && exists && remoteOwner == newPeerID {
+						break
+					}
+					time.Sleep(time.Millisecond * 100)
+				}
+				// start the partition
+				startupResp, err := newPeerClient.StartPartition(
+					ctx,
+					&partipb.StartPartitionRequest{PartitionId: partitionID},
+				)
+				if err != nil {
+					log.Printf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
+					continue
+				} else if !startupResp.GetSuccess() {
+					log.Printf("node (%s) failed to start partition (%d)", newPeerID, partitionID)
+					continue
+				}
+				// unpause the partition on new node
+				if err := n.setPartition(partitionID, newPeerID, true); err != nil {
+					// TODO decide whether to panic or not
+					log.Println(err.Error())
+					continue
 				}
 			}
 		}
@@ -301,19 +335,16 @@ func (n *Cluster) getPartition(partitionID uint32) (*partipb.PartitionOwnership,
 }
 
 // setPartition assigns a partition to a node
-func (n *Cluster) setPartition(partitionID uint32, nodeID string, paused bool) error {
-	if paused {
-		n.logger.Infof("pausing partition (%d) on node (%s)", partitionID, nodeID)
-	} else {
-		n.logger.Infof("assigning partition (%d) to node (%s)", partitionID, nodeID)
-	}
+=======
+func (n *Cluster) setPartition(partitionID uint32, nodeID string, acceptMessages bool) error {
+	n.logger.Infof("assigning node (%s) partition (%d) accepting messages (%v)", nodeID, partitionID, acceptMessages)
 
 	key := strconv.FormatUint(uint64(partitionID), 10)
 
 	value := &partipb.PartitionOwnership{
-		PartitionId: partitionID,
-		Owner:       nodeID,
-		IsPaused:    paused,
+		PartitionId:       partitionID,
+		Owner:             nodeID,
+		AcceptingMessages: acceptMessages,
 	}
 
 	return raftwrapper.RaftApplyPut(n.node, partitionsGroupName, key, value)
@@ -332,6 +363,29 @@ func (n *Cluster) PartitionMappings() map[uint32]string {
 	return output
 }
 
+func (n *Cluster) StartPartition(ctx context.Context, request *partipb.StartPartitionRequest) (*partipb.StartPartitionResponse, error) {
+	partitionID := request.GetPartitionId()
+	ownerNode, err := n.getPartition(partitionID)
+	if err != nil {
+		return nil, err
+	}
+	ownerNodeID := ownerNode.GetOwner()
+	// if this node is not the owner, we cannot shut down that partition.
+	// TODO: decide if error would be better here
+	if ownerNodeID != n.node.ID {
+		log.Printf("received partition start command for another node (%s), partition (%d)", ownerNodeID, request.GetPartitionId())
+		return &partipb.StartPartitionResponse{Success: false}, nil
+	}
+	// attempt to start the partition using the provided handler
+	if err := n.msgHandler.StartPartition(ctx, partitionID); err != nil {
+		log.Printf("failed to start partition %d, %v", partitionID, err)
+		// TODO, should this return an error instead?
+		return &partipb.StartPartitionResponse{Success: false}, nil
+	}
+	// return success to the caller
+	return &partipb.StartPartitionResponse{Success: true}, nil
+}
+
 func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.ShutdownPartitionRequest) (*partipb.ShutdownPartitionResponse, error) {
 	partitionID := request.GetPartitionId()
 	ownerNodeID, err := n.getPartitionNode(partitionID)
@@ -341,7 +395,7 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 	// if this node is not the owner, we cannot shut down that partition.
 	// TODO: decide if error would be better here
 	if ownerNodeID != n.node.ID {
-		n.logger.Infof("received partition shutdown for another node %s, partition=%d", ownerNodeID, request.GetPartitionId())
+		n.logger.Infof("received partition shutdown for another node (%s), partition=(%d)", ownerNodeID, request.GetPartitionId())
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
 	// attempt to shut down the partition using the provided handler
@@ -366,7 +420,7 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 		if err != nil {
 			return nil, err
 		}
-		if !partition.GetIsPaused() {
+		if partition.GetAcceptingMessages() {
 			break
 		}
 		n.logger.Infof("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner())
@@ -445,6 +499,9 @@ func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 	return outputTyped, nil
 }
 
+// getClient returns a gRPC client for the given peer
+// TODO: if peer is self, return the local implementation instead of forcing
+// a gRPC call
 func getClient(ctx context.Context, p *raftwrapper.Peer) partipb.ClusteringClient {
 	// make the grpc client address
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)

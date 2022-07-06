@@ -50,6 +50,10 @@ func (c ClusteringService) Send(ctx context.Context, request *partipb.SendReques
 	return c.cluster.Send(ctx, request)
 }
 
+func (c ClusteringService) StartPartition(ctx context.Context, request *partipb.StartPartitionRequest) (*partipb.StartPartitionResponse, error) {
+	return c.cluster.StartPartition(ctx, request)
+}
+
 func (c ClusteringService) ShutdownPartition(ctx context.Context, request *partipb.ShutdownPartitionRequest) (*partipb.ShutdownPartitionResponse, error) {
 	return c.cluster.ShutdownPartition(ctx, request)
 }
