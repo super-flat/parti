@@ -41,19 +41,19 @@ func (w *wrapper) Errorf(format string, args ...interface{}) {
 }
 
 func (w *wrapper) Fatal(args ...interface{}) {
-	w.Fatal(args...)
+	w.Logger.Fatal(args...)
 }
 
 func (w *wrapper) Fatalf(format string, args ...interface{}) {
-	w.Fatalf(format, args...)
+	w.Logger.Fatalf(format, args...)
 }
 
 func (w *wrapper) Panic(args ...interface{}) {
-	w.Panic(args...)
+	w.Logger.Panic(args...)
 }
 
 func (w *wrapper) Panicf(format string, args ...interface{}) {
-	w.Panicf(format, args...)
+	w.Logger.Panicf(format, args...)
 }
 
 func WrapSysLog(log *log.Logger) Logger {
