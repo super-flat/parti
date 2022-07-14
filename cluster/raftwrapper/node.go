@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -17,6 +16,7 @@ import (
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/log"
 	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
@@ -40,14 +40,14 @@ type Node struct {
 	Serializer       serializer.Serializer
 	mList            *memberlist.Memberlist
 	stopped          *uint32
-	logger           *log.Logger
+	logger           log.Logger
 	stoppedCh        chan interface{}
 	mtx              *sync.Mutex
 	isStarted        bool
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.Discovery) (*Node, error) {
+func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.Discovery, logger log.Logger) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeID := newNodeID(6)
@@ -89,11 +89,6 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		return nil, err
 	}
 
-	// logging
-	// TODO refactor loggin in the next PR
-	logger := log.Default()
-	logger.SetPrefix("[parti] ")
-
 	grpcServer := grpc.NewServer()
 
 	// initial stopped flag
@@ -116,9 +111,14 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 	}, nil
 }
 
+// Set custom logger
+func (n *Node) WithLogger(logger log.Logger) {
+	n.logger = logger
+}
+
 // Start starts the Node and returns a channel that indicates, that the node has been stopped properly
 func (n *Node) Start() (chan interface{}, error) {
-	n.logger.Printf("Starting Raft Node, ID=%s", n.ID)
+	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -170,7 +170,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	// set up the tpc listener
 	listener, err := net.Listen("tcp", n.address)
 	if err != nil {
-		log.Fatal(err)
+		n.logger.Fatal(err)
 	}
 	// serve grpc
 	go func() {
@@ -187,7 +187,7 @@ func (n *Node) Start() (chan interface{}, error) {
 		n.Stop()
 	}()
 
-	n.logger.Printf("Node started on port %d and discovery port %d\n", n.RaftPort, n.DiscoveryPort)
+	n.logger.Infof("Node started on port %d and discovery port %d\n", n.RaftPort, n.DiscoveryPort)
 	n.stoppedCh = make(chan interface{})
 
 	n.isStarted = true
@@ -207,17 +207,17 @@ func (n *Node) Stop() {
 		// shut down discovery method
 		n.DiscoveryMethod.Stop()
 		if err := n.mList.Leave(10 * time.Second); err != nil {
-			n.logger.Printf("Failed to leave from discovery: %q\n", err.Error())
+			n.logger.Infof("Failed to leave from discovery: %q\n", err.Error())
 		}
 		if err := n.mList.Shutdown(); err != nil {
-			n.logger.Printf("Failed to shutdown discovery: %q\n", err.Error())
+			n.logger.Infof("Failed to shutdown discovery: %q\n", err.Error())
 		}
 		// shut down raft
 		if err := n.Raft.Shutdown().Error(); err != nil {
-			n.logger.Printf("Failed to shutdown Raft: %q\n", err.Error())
+			n.logger.Infof("Failed to shutdown Raft: %q\n", err.Error())
 		}
 		// shut down gRPC
-		n.logger.Println("Raft stopped")
+		n.logger.Info("Raft stopped")
 		n.GrpcServer.GracefulStop()
 		n.isStarted = false
 		n.stoppedCh <- true
@@ -246,7 +246,7 @@ func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
 				peerDiscoveryAddr := fmt.Sprintf("%s:%d", peerHost, detailsResp.DiscoveryPort)
 				_, err = n.mList.Join([]string{peerDiscoveryAddr})
 				if err != nil {
-					log.Printf("failed to join to cluster using discovery address: %s\n", peerDiscoveryAddr)
+					n.logger.Infof("failed to join to cluster using discovery address: %s\n", peerDiscoveryAddr)
 				}
 			}
 		}
@@ -283,7 +283,7 @@ func (n *Node) NotifyJoin(node *memberlist.Node) {
 	if n.IsLeader() {
 		result := n.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(nodeRaftAddr), 0, 0)
 		if result.Error() != nil {
-			log.Println(result.Error().Error())
+			n.logger.Info(result.Error().Error())
 		}
 	}
 }
@@ -296,7 +296,7 @@ func (n *Node) NotifyLeave(node *memberlist.Node) {
 		if n.IsLeader() {
 			result := n.Raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 			if result.Error() != nil {
-				log.Println(result.Error().Error())
+				n.logger.Info(result.Error().Error())
 			}
 		}
 	}
