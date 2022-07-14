@@ -51,9 +51,7 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 	ser := serializer.NewProtoSerializer()
 
 	// setup default logger
-	slog := syslog.Default()
-	slog.SetPrefix("[parti] ")
-	logger := log.WrapSysLog(slog)
+	logger := log.NewDefaultLogger()
 
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(

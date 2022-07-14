@@ -59,3 +59,7 @@ func (w *wrapper) Panicf(format string, args ...interface{}) {
 func WrapSysLog(log *log.Logger) Logger {
 	return &wrapper{log}
 }
+
+func NewDefaultLogger() Logger {
+	return WrapSysLog(log.Default())
+}
