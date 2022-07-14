@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	syslog "log"
 	"strconv"
 	"sync"
 	"time"
@@ -275,7 +274,7 @@ func (n *Cluster) leaderRebalance() {
 				// now, assign a new owner, but don't accept new messages
 				if err := n.setPartition(partitionID, newPeerID, false); err != nil {
 					// TODO: make this smarter
-					log.Println(err.Error())
+					n.logger.Error(err.Error())
 					continue
 				}
 				// then, invoke startup on new owner
@@ -302,16 +301,16 @@ func (n *Cluster) leaderRebalance() {
 					&partipb.StartPartitionRequest{PartitionId: partitionID},
 				)
 				if err != nil {
-					log.Printf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
+					n.logger.Infof("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
 					continue
 				} else if !startupResp.GetSuccess() {
-					log.Printf("node (%s) failed to start partition (%d)", newPeerID, partitionID)
+					n.logger.Infof("node (%s) failed to start partition (%d)", newPeerID, partitionID)
 					continue
 				}
 				// unpause the partition on new node
 				if err := n.setPartition(partitionID, newPeerID, true); err != nil {
 					// TODO decide whether to panic or not
-					log.Println(err.Error())
+					n.logger.Error(err.Error())
 					continue
 				}
 			}
@@ -333,7 +332,6 @@ func (n *Cluster) getPartition(partitionID uint32) (*partipb.PartitionOwnership,
 }
 
 // setPartition assigns a partition to a node
-=======
 func (n *Cluster) setPartition(partitionID uint32, nodeID string, acceptMessages bool) error {
 	n.logger.Infof("assigning node (%s) partition (%d) accepting messages (%v)", nodeID, partitionID, acceptMessages)
 
@@ -371,12 +369,12 @@ func (n *Cluster) StartPartition(ctx context.Context, request *partipb.StartPart
 	// if this node is not the owner, we cannot shut down that partition.
 	// TODO: decide if error would be better here
 	if ownerNodeID != n.node.ID {
-		log.Printf("received partition start command for another node (%s), partition (%d)", ownerNodeID, request.GetPartitionId())
+		n.logger.Infof("received partition start command for another node (%s), partition (%d)", ownerNodeID, request.GetPartitionId())
 		return &partipb.StartPartitionResponse{Success: false}, nil
 	}
 	// attempt to start the partition using the provided handler
 	if err := n.msgHandler.StartPartition(ctx, partitionID); err != nil {
-		log.Printf("failed to start partition %d, %v", partitionID, err)
+		n.logger.Infof("failed to start partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.StartPartitionResponse{Success: false}, nil
 	}
