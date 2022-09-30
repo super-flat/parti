@@ -1,0 +1,131 @@
+{
+  constraints: {
+    "go": "1.18"
+  },
+  extends: [
+    "config:base"
+  ],
+  enabledManagers: [
+    "regex", 
+    "github-actions",
+    "gomod"
+  ],
+  postUpdateOptions: [
+    "gomodTidy"
+  ],
+  regexManagers: [
+    {
+      fileMatch: [ 
+        ".github/renovate.json5$",
+      ],
+      matchStrings: [
+        "constraints: {(\\s*\\n\\s*)\"go\":\\s*\"(?<currentValue>.*?)\"",
+      ],
+      depNameTemplate: "go",
+      datasourceTemplate: "golang-version",
+      versioningTemplate: "npm",
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "FROM golang:(?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "golang",
+      datasourceTemplate: "docker"
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "google.golang.org/protobuf/cmd/protoc-gen-go@(?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "google.golang.org/protobuf",
+      datasourceTemplate: "go"
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "google.golang.org/grpc/cmd/protoc-gen-go-grpc@(?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
+      datasourceTemplate: "go",
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "FROM alpine:(?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "alpine",
+      datasourceTemplate: "docker"
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "github.com/bufbuild/buf/cmd/buf@(?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "github.com/bufbuild/buf",
+      datasourceTemplate: "go"
+    },
+    {
+      fileMatch: [
+        "Earthfile$"
+      ],
+      matchStrings: [
+        "\\$\\(go env GOPATH\\)/bin (?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "golangci/golangci-lint",
+      datasourceTemplate: "github-releases"
+    },
+    {
+      fileMatch: [
+        ".github/workflows/main.yml$",
+        ".github/workflows/pr.yml$"
+      ],
+      matchStrings: [
+        "version: (?<currentValue>.*?)\\n"
+      ],
+      depNameTemplate: "earthly/earthly",
+      datasourceTemplate: "github-releases"
+    }
+  ],
+  packageRules: [
+    {
+      matchPackageNames: ["go", "golang"],
+      separateMinorPatch: "true"
+    },
+    {
+      matchPackageNames: ["go", "golang"],
+      groupName: "go patch version",
+      matchUpdateTypes: ["patch"],
+    },
+    {
+      matchPackageNames: ["go", "golang"],
+      groupName: "go minor version",
+      matchUpdateTypes: ["minor"],
+    },
+    {
+      matchManagers: ["gomod"],
+      matchUpdateTypes: [
+        "minor"
+      ],
+      groupName: "Minor Go modules"
+    },
+    {
+      matchManagers: ["gomod"],
+      matchUpdateTypes: [
+        "patch"
+      ],
+      groupName: "Patch Go modules"
+    }
+  ]
+}
+
