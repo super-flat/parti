@@ -1,6 +1,6 @@
 VERSION 0.6
 
-FROM golang:1.18.2-alpine
+FROM golang:1.18.7-alpine
 
 golang-base:
     WORKDIR /app
