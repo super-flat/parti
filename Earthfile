@@ -87,7 +87,7 @@ k8s-base:
     SAVE ARTIFACT ./example /
 
 k8s-build:
-    FROM alpine:3.13.6
+    FROM alpine:3.16.2
     COPY +k8s-base/example .
     ENTRYPOINT ./example server
     SAVE IMAGE parti-example:dev
