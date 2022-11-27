@@ -82,6 +82,7 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan MembershipEvent, error) {
 
 	// kick off loop in goroutine
 	go k.pollPods(runningContext)
+	go k.listenChanges(runningContext)
 
 	// report started and return channel
 	k.isStarted = true
@@ -103,16 +104,18 @@ func (k *Kubernetes) Stop() {
 	}
 }
 
-// func (k *Kubernetes) listenChanges(ctx context.Context) {
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			return
-// 		default:
-// 			time.Sleep(time.Second * 5)
-// 		}
-// 	}
-// }
+// listenChanges subscribes to pod chagnes
+// TODO: Implement me!!!
+func (k *Kubernetes) listenChanges(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(time.Second * 5)
+		}
+	}
+}
 
 // pollPods loops over the k8s pods and reports additions and removals
 func (k *Kubernetes) pollPods(ctx context.Context) {

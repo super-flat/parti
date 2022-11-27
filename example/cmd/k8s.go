@@ -36,7 +36,15 @@ func init() {
 				log.Fatal(err)
 			}
 			for change := range outChan {
-				log.Printf("change %s %d\n", change.ID, change.Change)
+				switch change.Change {
+				case membership.MemberAdded:
+					log.Printf("member added %s @ %s:%d\n", change.ID, change.Address, change.Port)
+				case membership.MemberRemoved:
+					log.Printf("member removed %s", change.ID)
+				default:
+					log.Printf("unhandled change %v", change.Change)
+
+				}
 			}
 		},
 	}
