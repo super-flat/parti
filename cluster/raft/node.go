@@ -217,7 +217,7 @@ func (n *Node) AwaitShutdown() {
 }
 
 // handleDiscoveredNodes handles the discovered Node additions
-func (n *Node) handleDiscoveredNodes(events chan membership.MembershipEvent) {
+func (n *Node) handleDiscoveredNodes(events chan membership.Event) {
 	n.logger.Info("begin listening for member changes")
 	for event := range events {
 		n.logger.Infof("received event for addr %s:%d", event.Host, event.Port)

@@ -31,7 +31,7 @@ type Kubernetes struct {
 	portName          string
 	isStarted         bool
 	mtx               *sync.Mutex
-	discoCh           chan MembershipEvent
+	discoCh           chan Event
 	peerCache         map[string]*k8sPeer // peer ID -> peer
 	shutdownCallbacks []func()
 	pingInterval      time.Time
@@ -55,12 +55,12 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 		mtx:       &sync.Mutex{},
 		isStarted: false,
 		peerCache: make(map[string]*k8sPeer),
-		discoCh:   make(chan MembershipEvent),
+		discoCh:   make(chan Event),
 	}
 }
 
 // Listen returns a channel of membership change events
-func (k *Kubernetes) Listen(ctx context.Context) (chan MembershipEvent, error) {
+func (k *Kubernetes) Listen(ctx context.Context) (chan Event, error) {
 	k.mtx.Lock()
 	defer k.mtx.Unlock()
 	if k.isStarted {
@@ -162,7 +162,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 								if !seenBefore {
 									k.logger.Infof("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
 									if k.isStarted {
-										k.discoCh <- MembershipEvent{
+										k.discoCh <- Event{
 											ID:     newPeer.ID,
 											Host:   newPeer.Address,
 											Port:   newPeer.Port,
@@ -172,7 +172,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 								} else if seenBefore {
 									k.logger.Infof("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
 									if k.isStarted {
-										k.discoCh <- MembershipEvent{
+										k.discoCh <- Event{
 											ID:     newPeer.ID,
 											Host:   newPeer.Address,
 											Port:   newPeer.Port,
@@ -201,7 +201,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					peer.LastEvent = time.Now()
 					k.peerCache[ix] = peer
 					// push to the channel
-					k.discoCh <- MembershipEvent{
+					k.discoCh <- Event{
 						ID:     peer.ID,
 						Host:   peer.Address,
 						Port:   peer.Port,
