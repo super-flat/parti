@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	partilog "github.com/super-flat/parti/cluster/log"
+	partilog "github.com/super-flat/parti/log"
 )
 
 type k8sPeer struct {
@@ -46,7 +46,7 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 		podLabels[k] = v
 	}
 	return &Kubernetes{
-		logger:    partilog.NewDefaultLogger(),
+		logger:    partilog.DefaultLogger, // TODO move to a config
 		namespace: namespace,
 		podLabels: podLabelsCopy,
 		portName:  portName,

@@ -9,12 +9,12 @@ import (
 	"time"
 
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/log"
 	"github.com/super-flat/parti/cluster/membership"
 	raftwrapper "github.com/super-flat/parti/cluster/raft"
 	"github.com/super-flat/parti/cluster/raft/fsm"
 	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
+	"github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -44,14 +44,16 @@ type Cluster struct {
 	logger     log.Logger
 }
 
-func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider) *Cluster {
+func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider, logger log.Logger) *Cluster {
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
 
 	ser := serializer.NewProtoSerializer()
 
-	// setup default logger
-	logger := log.NewDefaultLogger()
+	// TODO make it an option then we can set default valye
+	if logger == nil {
+		logger = log.DefaultLogger
+	}
 
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
@@ -75,12 +77,6 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 		logger:         logger,
 		members:        members,
 	}
-}
-
-// Set custom logger
-func (n *Cluster) WithLogger(logger log.Logger) {
-	n.logger = logger
-	n.node.WithLogger(logger)
 }
 
 // Stop shuts down this node
@@ -267,7 +263,7 @@ func (n *Cluster) leaderRebalance() {
 						// TODO: this means that the shutdown grpc call failed. when a node goes down,
 						// this call will definitely fail. think about if there are other reasons this
 						// might fail, and perhaps have some kind of retry here?
-						n.logger.Warnf("failed to shutdown partition %d, %v", partitionID, err)
+						n.logger.Warningf("failed to shutdown partition %d, %v", partitionID, err)
 						continue
 					} else if !resp.GetSuccess() {
 						continue
@@ -398,7 +394,7 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 	}
 	// attempt to shut down the partition using the provided handler
 	if err := n.msgHandler.ShutdownPartition(ctx, partitionID); err != nil {
-		n.logger.Warnf("failed to shut down partition %d, %v", partitionID, err)
+		n.logger.Warningf("failed to shut down partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}

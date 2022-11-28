@@ -3,7 +3,7 @@ package cluster
 import (
 	"context"
 
-	"github.com/super-flat/parti/cluster/log"
+	"github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 

@@ -2,17 +2,17 @@ package server
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/super-flat/parti/cluster"
 	"github.com/super-flat/parti/cluster/membership"
+	"github.com/super-flat/parti/log"
 )
 
 func Run() {
-	log.Print("starting example server")
+	log.Info("starting example server")
 	ctx := context.Background()
 	var cancelCtx context.CancelFunc
 	ctx, cancelCtx = context.WithCancel(ctx)
@@ -35,6 +35,7 @@ func Run() {
 		handler,
 		numPartitions,
 		members,
+		log.DefaultLogger,
 	)
 	if err := partiNode.Start(ctx); err != nil {
 		panic(err)
@@ -55,5 +56,5 @@ func Run() {
 		done <- true
 	}()
 	<-done
-	log.Print("exiting example server")
+	log.Info("exiting example server")
 }
