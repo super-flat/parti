@@ -34,9 +34,7 @@ type Kubernetes struct {
 	discoCh           chan Event
 	peerCache         map[string]*k8sPeer // peer ID -> peer
 	shutdownCallbacks []func()
-	pingInterval      time.Time
-
-	k8sClient *kubernetes.Clientset
+	k8sClient         *kubernetes.Clientset
 }
 
 var _ Provider = &Kubernetes{}
@@ -147,7 +145,6 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					for _, container := range pod.Spec.Containers {
 						for _, port := range container.Ports {
 							if port.Name == k.portName {
-
 								newPeer := &k8sPeer{
 									ID:        pod.GetName(),
 									Address:   pod.Status.PodIP,
@@ -181,7 +178,6 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 									}
 								}
 								k.mtx.Unlock()
-
 							}
 						}
 					}

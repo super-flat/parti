@@ -231,10 +231,12 @@ func (n *Node) handleDiscoveredNodes(events chan membership.Event) {
 				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
 					n.logger.Errorf("failed to add peer, %v", err)
 				}
-
 			}
+
 		case membership.MemberRemoved:
-			n.handleRemovePeerEvent(event.Host, event.Port)
+			if err := n.handleRemovePeerEvent(event.Host, event.Port); err != nil {
+				n.logger.Errorf("failed to remove peer %v", err)
+			}
 
 		case membership.MemberPinged:
 			peerAddr := fmt.Sprintf("%s:%d", event.Host, event.Port)
@@ -245,10 +247,8 @@ func (n *Node) handleDiscoveredNodes(events chan membership.Event) {
 				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
 					n.logger.Errorf("failed to add peer, %v", err)
 				}
-
 			}
 		}
-
 	}
 }
 
