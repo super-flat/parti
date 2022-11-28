@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,7 +16,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/log"
-	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
+	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
@@ -31,11 +30,9 @@ const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
 type Node struct {
 	ID               string
 	RaftPort         int
-	DiscoveryPort    int
 	address          string
 	Raft             *raft.Raft
 	GrpcServer       *grpc.Server
-	DiscoveryMethod  discovery.Discovery
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	mList            *memberlist.Memberlist
@@ -44,10 +41,11 @@ type Node struct {
 	stoppedCh        chan interface{}
 	mtx              *sync.Mutex
 	isStarted        bool
+	members          membership.Provider
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serializer.Serializer, discoveryMethod discovery.Discovery, logger log.Logger) (*Node, error) {
+func NewNode(raftPort int, raftFsm raft.FSM, serializer serializer.Serializer, members membership.Provider, logger log.Logger) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeID := newNodeID(6)
@@ -101,8 +99,7 @@ func NewNode(raftPort, discoveryPort int, raftFsm raft.FSM, serializer serialize
 		Raft:             raftServer,
 		TransportManager: grpcTransport,
 		Serializer:       serializer,
-		DiscoveryPort:    discoveryPort,
-		DiscoveryMethod:  discoveryMethod,
+		members:          members,
 		logger:           logger,
 		stopped:          &stopped,
 		GrpcServer:       grpcServer,
@@ -118,6 +115,9 @@ func (n *Node) WithLogger(logger log.Logger) {
 
 // Start starts the Node and returns a channel that indicates, that the node has been stopped properly
 func (n *Node) Start() (chan interface{}, error) {
+	// TODO: accept context in method args
+	ctx := context.Background()
+
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
@@ -142,17 +142,6 @@ func (n *Node) Start() (chan interface{}, error) {
 		return nil, err
 	}
 
-	// members list discovery
-	mlConfig := memberlist.DefaultWANConfig()
-	mlConfig.BindPort = n.DiscoveryPort
-	mlConfig.Name = fmt.Sprintf("%s:%d", n.ID, n.RaftPort)
-	mlConfig.Events = n
-	list, err := memberlist.Create(mlConfig)
-	if err != nil {
-		return nil, err
-	}
-	n.mList = list
-
 	// register management services
 	n.TransportManager.Register(n.GrpcServer)
 
@@ -161,7 +150,7 @@ func (n *Node) Start() (chan interface{}, error) {
 	partipb.RegisterRaftServer(n.GrpcServer, raftRPCServer)
 
 	// discovery method
-	discoveryChan, err := n.DiscoveryMethod.Start()
+	discoveryChan, err := n.members.Listen(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +176,7 @@ func (n *Node) Start() (chan interface{}, error) {
 		n.Stop()
 	}()
 
-	n.logger.Infof("Node started on port %d and discovery port %d\n", n.RaftPort, n.DiscoveryPort)
+	n.logger.Infof("Node started on port %d\n", n.RaftPort)
 	n.stoppedCh = make(chan interface{})
 
 	n.isStarted = true
@@ -205,7 +194,6 @@ func (n *Node) Stop() {
 		// 	n.logger.Println("Failed to create snapshot!")
 		// }
 		// shut down discovery method
-		n.DiscoveryMethod.Stop()
 		if err := n.mList.Leave(10 * time.Second); err != nil {
 			n.logger.Infof("Failed to leave from discovery: %q\n", err.Error())
 		}
@@ -229,27 +217,38 @@ func (n *Node) AwaitShutdown() {
 }
 
 // handleDiscoveredNodes handles the discovered Node additions
-func (n *Node) handleDiscoveredNodes(discoveryChan chan string) {
-	for peerAddr := range discoveryChan {
-		detailsResp, err := n.getPeerDetails(peerAddr)
-		if err == nil {
-			serverID := detailsResp.ServerId
-			needToAddNode := true
-			for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-				if server.ID == raft.ServerID(serverID) || string(server.Address) == peerAddr {
-					needToAddNode = false
-					break
+func (n *Node) handleDiscoveredNodes(events chan membership.MembershipEvent) {
+	n.logger.Info("begin listening for member changes")
+	for event := range events {
+		n.logger.Infof("received event for addr %s:%d", event.Host, event.Port)
+		switch event.Change {
+		case membership.MemberAdded:
+			peerAddr := fmt.Sprintf("%s:%d", event.Host, event.Port)
+			detailsResp, err := n.getPeerDetails(peerAddr)
+			if err != nil {
+				n.logger.Error(err)
+			} else {
+				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
+					n.logger.Errorf("failed to add peer, %v", err)
 				}
+
 			}
-			if needToAddNode {
-				peerHost := strings.Split(peerAddr, ":")[0]
-				peerDiscoveryAddr := fmt.Sprintf("%s:%d", peerHost, detailsResp.DiscoveryPort)
-				_, err = n.mList.Join([]string{peerDiscoveryAddr})
-				if err != nil {
-					n.logger.Infof("failed to join to cluster using discovery address: %s\n", peerDiscoveryAddr)
+		case membership.MemberRemoved:
+			n.handleRemovePeerEvent(event.Host, event.Port)
+
+		case membership.MemberPinged:
+			peerAddr := fmt.Sprintf("%s:%d", event.Host, event.Port)
+			detailsResp, err := n.getPeerDetails(peerAddr)
+			if err != nil {
+				n.logger.Error(err)
+			} else {
+				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
+					n.logger.Errorf("failed to add peer, %v", err)
 				}
+
 			}
 		}
+
 	}
 }
 
@@ -274,35 +273,36 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 	return response, nil
 }
 
-// NotifyJoin triggered when a new Node has been joined to the cluster (discovery only)
-// and capable of joining the Node to the raft cluster
-func (n *Node) NotifyJoin(node *memberlist.Node) {
-	nameParts := strings.Split(node.Name, ":")
-	nodeID, nodeRaftPort := nameParts[0], nameParts[1]
-	nodeRaftAddr := fmt.Sprintf("%s:%s", node.Addr, nodeRaftPort)
+func (n *Node) handleAddPeerEvent(ID string, host string, port uint16) error {
 	if n.IsLeader() {
-		result := n.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(nodeRaftAddr), 0, 0)
-		if result.Error() != nil {
-			n.logger.Info(result.Error().Error())
+		addr := fmt.Sprintf("%s:%d", host, port)
+		// skip dups
+		for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
+			if string(server.Address) == addr || string(server.ID) == ID {
+				n.logger.Debugf("skipping duplicate peer add %s", ID)
+				return nil
+			}
+		}
+		if err := n.Raft.AddVoter(raft.ServerID(ID), raft.ServerAddress(addr), 0, 0).Error(); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-// NotifyLeave triggered when a Node becomes unavailable after a period of time
-// it will remove the unavailable Node from the Raft cluster
-func (n *Node) NotifyLeave(node *memberlist.Node) {
-	if n.DiscoveryMethod.SupportsNodeAutoRemoval() {
-		nodeID := strings.Split(node.Name, ":")[0]
-		if n.IsLeader() {
-			result := n.Raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
-			if result.Error() != nil {
-				n.logger.Info(result.Error().Error())
+func (n *Node) handleRemovePeerEvent(host string, port uint16) error {
+	if n.IsLeader() {
+		addr := fmt.Sprintf("%s:%d", host, port)
+		// find the server using the host/port
+		// TODO: rethink this
+		for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
+			if string(server.Address) == addr {
+				res := n.Raft.RemoveServer(server.ID, 0, 0)
+				return res.Error()
 			}
 		}
 	}
-}
-
-func (n *Node) NotifyUpdate(_ *memberlist.Node) {
+	return nil
 }
 
 // RaftApply is used to apply any new logs to the raft cluster

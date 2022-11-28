@@ -34,6 +34,7 @@ type Kubernetes struct {
 	discoCh           chan MembershipEvent
 	peerCache         map[string]*k8sPeer // peer ID -> peer
 	shutdownCallbacks []func()
+	pingInterval      time.Time
 
 	k8sClient *kubernetes.Clientset
 }
@@ -65,6 +66,7 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan MembershipEvent, error) {
 	if k.isStarted {
 		return nil, errors.New("already started")
 	}
+	k.logger.Info("starting k8s membership")
 
 	// make the context cancelable
 	runningContext, cancelContext := context.WithCancel(ctx)
@@ -90,10 +92,11 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan MembershipEvent, error) {
 }
 
 // Stop should stop the discovery method and all of its goroutines, it should close discovery channel returned in Start
-func (k *Kubernetes) Stop() {
+func (k *Kubernetes) Stop(ctx context.Context) {
 	k.mtx.Lock()
 	defer k.mtx.Unlock()
 	if k.isStarted {
+		k.logger.Info("stopping k8s membership")
 		k.isStarted = false
 		for _, callback := range k.shutdownCallbacks {
 			callback()
@@ -119,11 +122,14 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 
 // pollPods loops over the k8s pods and reports additions and removals
 func (k *Kubernetes) pollPods(ctx context.Context) {
+	k.logger.Info("starting pollPods")
 	for {
 		select {
 		case <-ctx.Done():
+			k.logger.Info("shutting down pollPods")
 			return
 		default:
+			k.logger.Info("pollings pods")
 			// select pods that have specific labels
 			pods, err := k.k8sClient.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
@@ -141,30 +147,41 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					for _, container := range pod.Spec.Containers {
 						for _, port := range container.Ports {
 							if port.Name == k.portName {
-								peerID := pod.GetName()
-								_, seenBefore := k.peerCache[peerID]
+
+								newPeer := &k8sPeer{
+									ID:        pod.GetName(),
+									Address:   pod.Status.PodIP,
+									Port:      uint16(port.ContainerPort),
+									LastEvent: time.Now(),
+									IsLive:    true,
+								}
+								k.mtx.Lock()
+								_, seenBefore := k.peerCache[newPeer.ID]
+								k.peerCache[newPeer.ID] = newPeer
 								// if it's new, report it to the discovery channel
 								if !seenBefore {
-									newPeer := &k8sPeer{
-										ID:        peerID,
-										Address:   pod.Status.PodIP,
-										Port:      uint16(port.ContainerPort),
-										LastEvent: time.Now(),
-										IsLive:    true,
-									}
-									log.Printf("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
-									k.peerCache[peerID] = newPeer
-									k.mtx.Lock()
+									k.logger.Infof("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
 									if k.isStarted {
 										k.discoCh <- MembershipEvent{
-											ID:      newPeer.ID,
-											Address: newPeer.Address,
-											Port:    newPeer.Port,
-											Change:  MemberAdded,
+											ID:     newPeer.ID,
+											Host:   newPeer.Address,
+											Port:   newPeer.Port,
+											Change: MemberAdded,
 										}
 									}
-									k.mtx.Unlock()
+								} else if seenBefore {
+									k.logger.Infof("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
+									if k.isStarted {
+										k.discoCh <- MembershipEvent{
+											ID:     newPeer.ID,
+											Host:   newPeer.Address,
+											Port:   newPeer.Port,
+											Change: MemberPinged,
+										}
+									}
 								}
+								k.mtx.Unlock()
+
 							}
 						}
 					}
@@ -185,15 +202,16 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					k.peerCache[ix] = peer
 					// push to the channel
 					k.discoCh <- MembershipEvent{
-						ID:      peer.ID,
-						Address: peer.Address,
-						Port:    peer.Port,
-						Change:  MemberRemoved,
+						ID:     peer.ID,
+						Host:   peer.Address,
+						Port:   peer.Port,
+						Change: MemberRemoved,
 					}
-					log.Printf("removed k8s peer %s at %s:%d", peer.ID, peer.Address, peer.Port)
+					k.logger.Infof("removed k8s peer %s at %s:%d", peer.ID, peer.Address, peer.Port)
 					k.mtx.Unlock()
 				}
 			}
+			time.Sleep(time.Second * 5)
 		}
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/super-flat/parti/cluster"
-	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
+	"github.com/super-flat/parti/cluster/membership"
 )
 
 func Run() {
@@ -25,16 +25,16 @@ func Run() {
 	// run the raft node
 	numPartitions := uint32(10)
 	// define discovery
-	// podLabels := map[string]string{"app": "parti"}
-	// discoveryService := discovery.NewKubernetesDiscovery("default", podLabels, "raft")
-	discoveryService := discovery.NewMDNSDiscovery(int(cfg.RaftPort))
+	namespace := "default"
+	podLabels := map[string]string{"app": "parti"}
+	portName := "parti"
+	members := membership.NewKubernetes(namespace, podLabels, portName)
 
 	partiNode := cluster.NewCluster(
 		cfg.RaftPort,
-		cfg.DiscoveryPort,
 		handler,
 		numPartitions,
-		discoveryService,
+		members,
 	)
 	if err := partiNode.Start(ctx); err != nil {
 		panic(err)

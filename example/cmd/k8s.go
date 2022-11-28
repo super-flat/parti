@@ -38,7 +38,7 @@ func init() {
 			for change := range outChan {
 				switch change.Change {
 				case membership.MemberAdded:
-					log.Printf("member added %s @ %s:%d\n", change.ID, change.Address, change.Port)
+					log.Printf("member added %s @ %s:%d\n", change.ID, change.Host, change.Port)
 				case membership.MemberRemoved:
 					log.Printf("member removed %s", change.ID)
 				default:

@@ -40,15 +40,14 @@ spec:
       containers:
       - name: parti
         image: "parti-example:dev"
-        command: [ "./example", "k" ]
+        # command: [ "./example", "k" ]
+        command: [ "./example", "server" ]
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 50001
           name: app
         - containerPort: 50101
-          name: raft
-        - containerPort: 50201
-          name: discovery
+          name: parti
         env:
         - name: HOST_IP
           valueFrom:
@@ -58,8 +57,6 @@ spec:
           value: "50001"
         - name: RAFT_PORT
           value: "50101"
-        - name: DISCOVERY_PORT
-          value: "50201"
         resources:
           requests:
             memory: "64Mi"
