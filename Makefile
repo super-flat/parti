@@ -12,4 +12,19 @@ run3:
 
 .PHONY: curl1
 curl1:
-	curl -v http://localhost:50101/message?partition=9&message=hello
+	curl -v http://localhost:50001/message?partition=9&message=hello
+
+.PHONY: build-local
+build-local:
+	env GOOS=linux GOARCH=arm go build -o .tmp/example ./example
+	earthly +local-build
+
+.PHONY: example-rm
+example-rm:
+	kubectl delete -f ./example/k8s.yml
+	minikube image rm parti-example:dev
+
+.PHONY: example-up
+example-up:
+	minikube image load parti-example:dev
+	kubectl apply -f ./example/k8s.yml
