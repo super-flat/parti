@@ -6,8 +6,6 @@ require (
 	github.com/Jille/raft-grpc-transport v1.2.0
 	github.com/caarlos0/env/v6 v6.9.3
 	github.com/google/uuid v1.3.0
-	github.com/grandcat/zeroconf v1.0.0
-	github.com/hashicorp/mdns v1.0.5
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/hashicorp/raft v1.3.9
 	github.com/joho/godotenv v1.4.0
@@ -23,7 +21,6 @@ require (
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
 	github.com/fatih/color v1.13.0 // indirect

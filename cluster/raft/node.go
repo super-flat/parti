@@ -14,10 +14,10 @@ import (
 
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
-	"github.com/hashicorp/raft"
+	hraft "github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/log"
 	"github.com/super-flat/parti/cluster/membership"
-	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
+	"github.com/super-flat/parti/cluster/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -31,7 +31,7 @@ type Node struct {
 	ID               string
 	RaftPort         int
 	address          string
-	Raft             *raft.Raft
+	Raft             *hraft.Raft
 	GrpcServer       *grpc.Server
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
@@ -45,13 +45,13 @@ type Node struct {
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort int, raftFsm raft.FSM, serializer serializer.Serializer, members membership.Provider, logger log.Logger) (*Node, error) {
+func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, members membership.Provider, logger log.Logger) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeID := newNodeID(6)
 
-	raftConf := raft.DefaultConfig()
-	raftConf.LocalID = raft.ServerID(nodeID)
+	raftConf := hraft.DefaultConfig()
+	raftConf.LocalID = hraft.ServerID(nodeID)
 	raftLogCacheSize := 512
 	raftConf.LogLevel = "Info"
 
@@ -60,9 +60,9 @@ func NewNode(raftPort int, raftFsm raft.FSM, serializer serializer.Serializer, m
 	// implement custom one locally... assuming they dont like that
 	// it's in memory, but our nodes are ephemeral and keys are low
 	// cardinality, so should be OK.
-	stableStore := raft.NewInmemStore()
+	stableStore := hraft.NewInmemStore()
 
-	logStore, err := raft.NewLogCache(raftLogCacheSize, stableStore)
+	logStore, err := hraft.NewLogCache(raftLogCacheSize, stableStore)
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +70,11 @@ func NewNode(raftPort int, raftFsm raft.FSM, serializer serializer.Serializer, m
 	// snapshot store that discards everything
 	// TODO: see if there's any reason not to use this inmem snapshot store
 	// var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
-	var snapshotStore raft.SnapshotStore = raft.NewDiscardSnapshotStore()
+	var snapshotStore hraft.SnapshotStore = hraft.NewDiscardSnapshotStore()
 
 	// grpc transport
 	grpcTransport := transport.New(
-		raft.ServerAddress(addr),
+		hraft.ServerAddress(addr),
 		[]grpc.DialOption{
 			// TODO: is this needed, or is insecure default?
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -82,7 +82,7 @@ func NewNode(raftPort int, raftFsm raft.FSM, serializer serializer.Serializer, m
 	)
 
 	// raft server
-	raftServer, err := raft.NewRaft(raftConf, raftFsm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
+	raftServer, err := hraft.NewRaft(raftConf, raftFsm, logStore, stableStore, snapshotStore, grpcTransport.Transport())
 	if err != nil {
 		return nil, err
 	}
@@ -128,10 +128,10 @@ func (n *Node) Start() (chan interface{}, error) {
 	}
 
 	// raft server
-	configuration := raft.Configuration{
-		Servers: []raft.Server{
+	configuration := hraft.Configuration{
+		Servers: []hraft.Server{
 			{
-				ID:      raft.ServerID(n.ID),
+				ID:      hraft.ServerID(n.ID),
 				Address: n.TransportManager.Transport().LocalAddr(),
 			},
 		},
@@ -283,7 +283,7 @@ func (n *Node) handleAddPeerEvent(ID string, host string, port uint16) error {
 				return nil
 			}
 		}
-		if err := n.Raft.AddVoter(raft.ServerID(ID), raft.ServerAddress(addr), 0, 0).Error(); err != nil {
+		if err := n.Raft.AddVoter(hraft.ServerID(ID), hraft.ServerAddress(addr), 0, 0).Error(); err != nil {
 			return err
 		}
 	}
