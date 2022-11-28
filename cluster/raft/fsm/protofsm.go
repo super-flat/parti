@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
+	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/cluster/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -18,7 +18,7 @@ type ProtoFsm struct {
 	ser  *serializer.ProtoSerializer
 }
 
-var _ raft.FSM = &ProtoFsm{}
+var _ hraft.FSM = &ProtoFsm{}
 
 func NewProtoFsm() *ProtoFsm {
 	return &ProtoFsm{
@@ -34,13 +34,13 @@ func NewProtoFsm() *ProtoFsm {
 // produce the same result on all peers in the cluster.
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
-func (p *ProtoFsm) Apply(raftLog *raft.Log) interface{} {
+func (p *ProtoFsm) Apply(raftLog *hraft.Log) interface{} {
 	if raftLog == nil || raftLog.Data == nil {
 		log.Println("Raft received nil log apply!")
 		return nil
 	}
 	switch raftLog.Type {
-	case raft.LogCommand:
+	case hraft.LogCommand:
 		msg, err := p.ser.DeserializeProto(raftLog.Data)
 		if err != nil {
 			return err
@@ -89,7 +89,7 @@ func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 // Apply and Snapshot are always called from the same thread, but Apply will
 // be called concurrently with FSMSnapshot.Persist. This means the FSM should
 // be implemented to allow for concurrent updates while a snapshot is happening.
-func (p *ProtoFsm) Snapshot() (raft.FSMSnapshot, error) {
+func (p *ProtoFsm) Snapshot() (hraft.FSMSnapshot, error) {
 	return nil, errors.New("not implemented")
 }
 

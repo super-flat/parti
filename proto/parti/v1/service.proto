@@ -90,4 +90,5 @@ message SendResponse {
   string message_id = 2;
   string node_id = 3;
   google.protobuf.Any response = 4;
+  repeated string node_chain = 5;
 }

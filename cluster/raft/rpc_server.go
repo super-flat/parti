@@ -19,8 +19,7 @@ func NewRaftRPCServer(node *Node) *RaftRPC {
 
 func (r RaftRPC) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
 	return &partipb.GetPeerDetailsResponse{
-		ServerId:      r.node.ID,
-		DiscoveryPort: uint32(r.node.DiscoveryPort),
+		ServerId: r.node.ID,
 	}, nil
 }
 

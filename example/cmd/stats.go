@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	statsCMD.Flags().String("addr", "", "grpc address")
+	statsCMD.Flags().String("addr", "50101", "grpc address")
 	rootCmd.AddCommand(statsCMD)
 }
 

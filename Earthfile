@@ -88,6 +88,14 @@ k8s-base:
 
 k8s-build:
     FROM alpine:3.16.2
+    WORKDIR /app
     COPY +k8s-base/example .
+    ENTRYPOINT ./example server
+    SAVE IMAGE parti-example:dev
+
+local-build:
+    FROM alpine:3.16.2
+    WORKDIR /app
+    COPY ./.tmp/example .
     ENTRYPOINT ./example server
     SAVE IMAGE parti-example:dev

@@ -10,10 +10,10 @@ import (
 
 	hraft "github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/log"
-	"github.com/super-flat/parti/cluster/raftwrapper"
-	"github.com/super-flat/parti/cluster/raftwrapper/discovery"
-	"github.com/super-flat/parti/cluster/raftwrapper/fsm"
-	"github.com/super-flat/parti/cluster/raftwrapper/serializer"
+	"github.com/super-flat/parti/cluster/membership"
+	raftwrapper "github.com/super-flat/parti/cluster/raft"
+	"github.com/super-flat/parti/cluster/raft/fsm"
+	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
@@ -27,7 +27,8 @@ const (
 
 type Cluster struct {
 	partitionCount uint32
-
+	// todo: make this generic
+	members  membership.Provider
 	node     *raftwrapper.Node
 	nodeData *fsm.ProtoFsm
 
@@ -43,7 +44,7 @@ type Cluster struct {
 	logger     log.Logger
 }
 
-func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, partitionCount uint32, discoveryService discovery.Discovery) *Cluster {
+func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider) *Cluster {
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
 
@@ -55,10 +56,9 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
 		int(raftPort),
-		int(discoveryPort),
 		raftFsm,
 		ser,
-		discoveryService,
+		members,
 		logger,
 	)
 	if err != nil {
@@ -73,6 +73,7 @@ func NewCluster(raftPort uint16, discoveryPort uint16, msgHandler Handler, parti
 		msgHandler:     msgHandler,
 		partitionCount: partitionCount,
 		logger:         logger,
+		members:        members,
 	}
 }
 
@@ -83,7 +84,7 @@ func (n *Cluster) WithLogger(logger log.Logger) {
 }
 
 // Stop shuts down this node
-func (n *Cluster) Stop(context.Context) {
+func (n *Cluster) Stop(ctx context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
@@ -92,6 +93,7 @@ func (n *Cluster) Stop(context.Context) {
 			n.grpcServer.GracefulStop()
 		}
 		go n.node.Stop()
+		n.members.Stop(ctx)
 		// waits for easy raft shutdown
 		// TODO: sometimes this never receives, so disabling this for now
 		n.node.AwaitShutdown()
@@ -435,6 +437,7 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 			PartitionId: request.GetPartitionId(),
 			MessageId:   request.GetMessageId(),
 			Response:    handlerResp,
+			NodeChain:   []string{n.node.ID},
 		}
 		return resp, nil
 	}
@@ -446,7 +449,12 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 		return nil, errors.New("peer not ready for messages")
 	}
 	n.logger.Infof("forwarding send, node=%s, messageID=%s, partition=%d", peer.ID, request.GetMessageId(), partitionID)
-	return getClient(ctx, peer).Send(ctx, request)
+	remoteResp, err := getClient(ctx, peer).Send(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	remoteResp.NodeChain = append(remoteResp.NodeChain, n.node.ID)
+	return remoteResp, nil
 }
 
 // Ping a partition and receive a response from the node that owns it
