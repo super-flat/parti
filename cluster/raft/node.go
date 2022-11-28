@@ -15,9 +15,9 @@ import (
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/memberlist"
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/log"
 	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/raft/serializer"
+	"github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -108,7 +108,7 @@ func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, 
 	}, nil
 }
 
-// Set custom logger
+// WithLogger sets custom log
 func (n *Node) WithLogger(logger log.Logger) {
 	n.logger = logger
 }
@@ -191,7 +191,7 @@ func (n *Node) Stop() {
 	if n.isStarted {
 		// snapshot state
 		// if err := n.Raft.Snapshot().Error(); err != nil {
-		// 	n.logger.Println("Failed to create snapshot!")
+		// 	n.log.Println("Failed to create snapshot!")
 		// }
 		// shut down discovery method
 		if err := n.mList.Leave(10 * time.Second); err != nil {
