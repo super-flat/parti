@@ -123,11 +123,11 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 
 // pollPods loops over the k8s pods and reports additions and removals
 func (k *Kubernetes) pollPods(ctx context.Context) {
-	k.logger.Info("starting pollPods")
+	k.logger.Debug("starting pollPods")
 	for {
 		select {
 		case <-ctx.Done():
-			k.logger.Info("shutting down pollPods")
+			k.logger.Debug("shutting down pollPods")
 			return
 		default:
 			// select pods that have specific labels
@@ -135,7 +135,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 				LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
 			})
 			if err != nil {
-				log.Printf("could not list pods for kubernetes discovery, %v", err)
+				k.logger.Errorf("could not list pods for kubernetes discovery, %v", err)
 			}
 			seenThisLoop := make(map[string]bool)
 			// enumerate pods that match label selector
@@ -188,7 +188,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 						}
 					}
 				} else if seenBefore {
-					k.logger.Infof("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
+					k.logger.Debugf("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
 					if k.isStarted {
 						k.discoCh <- Event{
 							ID:     newPeer.ID,
