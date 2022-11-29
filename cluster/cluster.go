@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,7 +57,6 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 		int(raftPort),
 		raftFsm,
 		ser,
-		members,
 		logger,
 	)
 	if err != nil {
@@ -74,15 +75,40 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 	}
 }
 
+func (n *Cluster) handleMemberEvents(events chan membership.Event) {
+	n.logger.Info("begin listening for member changes")
+	for event := range events {
+		if !n.node.IsLeader() {
+			n.logger.Debugf("skipping event because not leader")
+			continue
+		}
+		n.logger.Infof("received event for addr %s:%d", event.Host, event.Port)
+		switch event.Change {
+		case membership.MemberAdded:
+			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
+				n.logger.Errorf("failed to add peer, %v", err)
+			}
+
+		case membership.MemberRemoved:
+			if err := n.node.RemovePeer(event.Host, event.Port); err != nil {
+				n.logger.Errorf("failed to add peer, %v", err)
+			}
+
+		case membership.MemberPinged:
+			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
+				n.logger.Errorf("failed to add peer, %v", err)
+			}
+		}
+	}
+}
+
 // Stop shuts down this node
 func (n *Cluster) Stop(ctx context.Context) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
 		n.logger.Info("Shutting down node")
-		if n.grpcServer != nil {
-			n.grpcServer.GracefulStop()
-		}
+		n.grpcServer.GracefulStop()
 		go n.node.Stop()
 		n.members.Stop(ctx)
 		// waits for easy raft shutdown
@@ -94,7 +120,7 @@ func (n *Cluster) Stop(ctx context.Context) {
 }
 
 // Start the cluster node
-func (n *Cluster) Start(context.Context) error {
+func (n *Cluster) Start(ctx context.Context) error {
 	// acquire lock to ensure node is only started once
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -106,10 +132,21 @@ func (n *Cluster) Start(context.Context) error {
 	clusteringServer := NewClusteringService(n)
 	partipb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
 	// start the underlying raft node
-	_, err := n.node.Start()
+
+	isLeaderEnv := os.Getenv("RAFT_LEADER")
+	isLeader := strings.ToLower(isLeaderEnv) == "true"
+	n.logger.Infof("STARTING AS LEADER %v because env var '%s'", isLeader, isLeaderEnv)
+	_, err := n.node.Start(ctx, isLeader)
 	if err != nil {
 		return err
 	}
+	// read member events
+	memberEvents, err := n.members.Listen(ctx)
+	if err != nil {
+		return err
+	}
+
+	go n.handleMemberEvents(memberEvents)
 	// handle peer observations
 	n.registerPeerObserver()
 	go n.handlePeerObservations()
@@ -233,7 +270,6 @@ func (n *Cluster) leaderRebalance() {
 		}
 		// compute rebalance
 		rebalancedOutput := rebalance.ComputeRebalance(n.partitionCount, currentPartitions, activePeerIDs)
-		n.logger.Infof("moving %d partitions to new peers", len(rebalancedOutput))
 		// apply any rebalance changes to the cluster
 		for partitionID, newPeerID := range rebalancedOutput {
 			currentPeerID, isMapped := currentPartitions[partitionID]

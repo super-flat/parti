@@ -13,9 +13,7 @@ import (
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
-	"github.com/hashicorp/memberlist"
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
@@ -35,17 +33,15 @@ type Node struct {
 	GrpcServer       *grpc.Server
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
-	mList            *memberlist.Memberlist
 	stopped          *uint32
 	logger           log.Logger
 	stoppedCh        chan interface{}
 	mtx              *sync.Mutex
 	isStarted        bool
-	members          membership.Provider
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, members membership.Provider, logger log.Logger) (*Node, error) {
+func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeID := newNodeID(6)
@@ -99,7 +95,6 @@ func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, 
 		Raft:             raftServer,
 		TransportManager: grpcTransport,
 		Serializer:       serializer,
-		members:          members,
 		logger:           logger,
 		stopped:          &stopped,
 		GrpcServer:       grpcServer,
@@ -114,10 +109,7 @@ func (n *Node) WithLogger(logger log.Logger) {
 }
 
 // Start starts the Node and returns a channel that indicates, that the node has been stopped properly
-func (n *Node) Start() (chan interface{}, error) {
-	// TODO: accept context in method args
-	ctx := context.Background()
-
+func (n *Node) Start(ctx context.Context, isLeader bool) (chan interface{}, error) {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
@@ -127,19 +119,21 @@ func (n *Node) Start() (chan interface{}, error) {
 		return nil, errors.New("already started")
 	}
 
-	// raft server
-	configuration := hraft.Configuration{
-		Servers: []hraft.Server{
-			{
-				ID:      hraft.ServerID(n.ID),
-				Address: n.TransportManager.Transport().LocalAddr(),
+	if isLeader {
+		// raft server
+		configuration := hraft.Configuration{
+			Servers: []hraft.Server{
+				{
+					ID:      hraft.ServerID(n.ID),
+					Address: n.TransportManager.Transport().LocalAddr(),
+				},
 			},
-		},
-	}
-	f := n.Raft.BootstrapCluster(configuration)
-	err := f.Error()
-	if err != nil {
-		return nil, err
+		}
+		f := n.Raft.BootstrapCluster(configuration)
+		err := f.Error()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// register management services
@@ -148,13 +142,6 @@ func (n *Node) Start() (chan interface{}, error) {
 	// register custom raft RPC
 	raftRPCServer := NewRaftRPCServer(n)
 	partipb.RegisterRaftServer(n.GrpcServer, raftRPCServer)
-
-	// discovery method
-	discoveryChan, err := n.members.Listen(ctx)
-	if err != nil {
-		return nil, err
-	}
-	go n.handleDiscoveredNodes(discoveryChan)
 
 	// set up the tpc listener
 	listener, err := net.Listen("tcp", n.address)
@@ -193,13 +180,6 @@ func (n *Node) Stop() {
 		// if err := n.Raft.Snapshot().Error(); err != nil {
 		// 	n.log.Println("Failed to create snapshot!")
 		// }
-		// shut down discovery method
-		if err := n.mList.Leave(10 * time.Second); err != nil {
-			n.logger.Infof("Failed to leave from discovery: %q\n", err.Error())
-		}
-		if err := n.mList.Shutdown(); err != nil {
-			n.logger.Infof("Failed to shutdown discovery: %q\n", err.Error())
-		}
 		// shut down raft
 		if err := n.Raft.Shutdown().Error(); err != nil {
 			n.logger.Infof("Failed to shutdown Raft: %q\n", err.Error())
@@ -214,42 +194,6 @@ func (n *Node) Stop() {
 
 func (n *Node) AwaitShutdown() {
 	<-n.stoppedCh
-}
-
-// handleDiscoveredNodes handles the discovered Node additions
-func (n *Node) handleDiscoveredNodes(events chan membership.Event) {
-	n.logger.Info("begin listening for member changes")
-	for event := range events {
-		n.logger.Infof("received event for addr %s:%d", event.Host, event.Port)
-		switch event.Change {
-		case membership.MemberAdded:
-			peerAddr := fmt.Sprintf("%s:%d", event.Host, event.Port)
-			detailsResp, err := n.getPeerDetails(peerAddr)
-			if err != nil {
-				n.logger.Error(err)
-			} else {
-				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
-					n.logger.Errorf("failed to add peer, %v", err)
-				}
-			}
-
-		case membership.MemberRemoved:
-			if err := n.handleRemovePeerEvent(event.Host, event.Port); err != nil {
-				n.logger.Errorf("failed to remove peer %v", err)
-			}
-
-		case membership.MemberPinged:
-			peerAddr := fmt.Sprintf("%s:%d", event.Host, event.Port)
-			detailsResp, err := n.getPeerDetails(peerAddr)
-			if err != nil {
-				n.logger.Error(err)
-			} else {
-				if err := n.handleAddPeerEvent(detailsResp.ServerId, event.Host, event.Port); err != nil {
-					n.logger.Errorf("failed to add peer, %v", err)
-				}
-			}
-		}
-	}
 }
 
 func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
@@ -273,35 +217,46 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 	return response, nil
 }
 
-func (n *Node) handleAddPeerEvent(ID string, host string, port uint16) error {
-	if n.IsLeader() {
-		addr := fmt.Sprintf("%s:%d", host, port)
-		// skip dups
-		for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-			if string(server.Address) == addr || string(server.ID) == ID {
-				n.logger.Debugf("skipping duplicate peer add %s", ID)
-				return nil
-			}
-		}
-		if err := n.Raft.AddVoter(hraft.ServerID(ID), hraft.ServerAddress(addr), 0, 0).Error(); err != nil {
-			return err
+func (n *Node) AddPeer(host string, port uint16) error {
+	if !n.IsLeader() {
+		return nil
+	}
+	peerAddr := fmt.Sprintf("%s:%d", host, port)
+	// ensure no other peer at this address port
+	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
+		if string(server.Address) == peerAddr {
+			n.logger.Debugf("skipping duplicate peer add %s", peerAddr)
+			return nil
 		}
 	}
-	return nil
+	// contact remote peer
+	detailsResp, err := n.getPeerDetails(peerAddr)
+	if err != nil {
+		n.logger.Error(err)
+		return err
+	}
+	// skip self
+	if detailsResp.GetServerId() == n.ID {
+		return nil
+	}
+	res := n.Raft.AddVoter(hraft.ServerID(detailsResp.GetServerId()), hraft.ServerAddress(peerAddr), 0, 0)
+	return res.Error()
 }
 
-func (n *Node) handleRemovePeerEvent(host string, port uint16) error {
-	if n.IsLeader() {
-		addr := fmt.Sprintf("%s:%d", host, port)
-		// find the server using the host/port
-		// TODO: rethink this
-		for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-			if string(server.Address) == addr {
-				res := n.Raft.RemoveServer(server.ID, 0, 0)
-				return res.Error()
-			}
+func (n *Node) RemovePeer(host string, port uint16) error {
+	if !n.IsLeader() {
+		return nil
+	}
+	addr := fmt.Sprintf("%s:%d", host, port)
+	// find the server using the host/port
+	// TODO: rethink this
+	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
+		if string(server.Address) == addr {
+			res := n.Raft.RemoveServer(server.ID, 0, 0)
+			return res.Error()
 		}
 	}
+	n.logger.Infof("did not find peer to remove at %s", addr)
 	return nil
 }
 

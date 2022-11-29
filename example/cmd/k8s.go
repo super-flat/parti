@@ -40,7 +40,9 @@ func init() {
 				case membership.MemberAdded:
 					log.Printf("member added %s @ %s:%d\n", change.ID, change.Host, change.Port)
 				case membership.MemberRemoved:
-					log.Printf("member removed %s", change.ID)
+					log.Printf("member removed %s\n", change.ID)
+				case membership.MemberPinged:
+					log.Printf("member pinged %s\n", change.ID)
 				default:
 					log.Printf("unhandled change %v", change.Change)
 
@@ -50,7 +52,7 @@ func init() {
 	}
 
 	namespace = cmd.Flags().String("namespace", "default", "")
-	portName = cmd.Flags().String("port", "raft", "")
+	portName = cmd.Flags().String("port", "parti", "")
 	flagLabels = cmd.Flags().StringArray("label", []string{"app:parti"}, "")
 
 	rootCmd.AddCommand(cmd)

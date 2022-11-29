@@ -40,8 +40,8 @@ spec:
       containers:
       - name: parti
         image: "parti-example:dev"
-        # command: [ "./example", "k" ]
-        command: [ "./example", "server" ]
+        command: [ "./example", "k" ]
+        # command: [ "./example", "server" ]
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 50001

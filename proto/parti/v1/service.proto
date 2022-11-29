@@ -55,6 +55,7 @@ message GetPeerDetailsRequest {}
 message GetPeerDetailsResponse {
   string server_id = 1;
   uint32 discovery_port = 2;
+  // bool is_in_cluster = 3;
 }
 
 message PingRequest {

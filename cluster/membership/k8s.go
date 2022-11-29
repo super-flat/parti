@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -24,6 +25,8 @@ type k8sPeer struct {
 	IsLive    bool
 }
 
+// Kubernetes implements the membership.Provider interface via direct
+// integration with the kubernetes API
 type Kubernetes struct {
 	logger            partilog.Logger
 	namespace         string
@@ -45,6 +48,7 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 	for k, v := range podLabels {
 		podLabels[k] = v
 	}
+
 	return &Kubernetes{
 		logger:    partilog.DefaultLogger, // TODO move to a config
 		namespace: namespace,
@@ -53,7 +57,7 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 		mtx:       &sync.Mutex{},
 		isStarted: false,
 		peerCache: make(map[string]*k8sPeer),
-		discoCh:   make(chan Event),
+		discoCh:   make(chan Event, 10),
 	}
 }
 
@@ -127,7 +131,6 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 			k.logger.Info("shutting down pollPods")
 			return
 		default:
-			k.logger.Info("pollings pods")
 			// select pods that have specific labels
 			pods, err := k.k8sClient.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
@@ -139,49 +142,64 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 			// enumerate pods that match label selector
 			for _, pod := range pods.Items {
 				// only consider running pods
-				if pod.Status.Phase == v1.PodRunning {
-					seenThisLoop[pod.GetName()] = true
-					// enumerate containers searching for the port
-					for _, container := range pod.Spec.Containers {
-						for _, port := range container.Ports {
-							if port.Name == k.portName {
-								newPeer := &k8sPeer{
-									ID:        pod.GetName(),
-									Address:   pod.Status.PodIP,
-									Port:      uint16(port.ContainerPort),
-									LastEvent: time.Now(),
-									IsLive:    true,
-								}
-								k.mtx.Lock()
-								_, seenBefore := k.peerCache[newPeer.ID]
-								k.peerCache[newPeer.ID] = newPeer
-								// if it's new, report it to the discovery channel
-								if !seenBefore {
-									k.logger.Infof("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
-									if k.isStarted {
-										k.discoCh <- Event{
-											ID:     newPeer.ID,
-											Host:   newPeer.Address,
-											Port:   newPeer.Port,
-											Change: MemberAdded,
-										}
-									}
-								} else if seenBefore {
-									k.logger.Infof("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
-									if k.isStarted {
-										k.discoCh <- Event{
-											ID:     newPeer.ID,
-											Host:   newPeer.Address,
-											Port:   newPeer.Port,
-											Change: MemberPinged,
-										}
-									}
-								}
-								k.mtx.Unlock()
+				if pod.Status.Phase != v1.PodRunning {
+					continue
+				}
+				if k.isSelf(pod.Status.PodIP) {
+					continue
+				}
+				// start recording the pods
+				seenThisLoop[pod.GetName()] = true
+				// enumerate containers searching for the port
+				var newPeer *k8sPeer
+				// search for the named port
+				for i := 0; i < len(pod.Spec.Containers) && newPeer == nil; i++ {
+					container := pod.Spec.Containers[i]
+					for _, port := range container.Ports {
+						if port.Name == k.portName {
+							// create the peer
+							newPeer = &k8sPeer{
+								ID:        pod.GetName(),
+								Address:   pod.Status.PodIP,
+								Port:      uint16(port.ContainerPort),
+								LastEvent: time.Now(),
+								IsLive:    true,
 							}
+							break
 						}
 					}
 				}
+				if newPeer == nil {
+					k.logger.Debugf("pod %s matched selector but did not have port named %s", pod.Name, k.portName)
+					continue
+				}
+
+				k.mtx.Lock()
+				_, seenBefore := k.peerCache[newPeer.ID]
+				k.peerCache[newPeer.ID] = newPeer
+				// if it's new, report it to the discovery channel
+				if !seenBefore {
+					k.logger.Infof("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
+					if k.isStarted {
+						k.discoCh <- Event{
+							ID:     newPeer.ID,
+							Host:   newPeer.Address,
+							Port:   newPeer.Port,
+							Change: MemberAdded,
+						}
+					}
+				} else if seenBefore {
+					k.logger.Infof("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
+					if k.isStarted {
+						k.discoCh <- Event{
+							ID:     newPeer.ID,
+							Host:   newPeer.Address,
+							Port:   newPeer.Port,
+							Change: MemberPinged,
+						}
+					}
+				}
+				k.mtx.Unlock()
 			}
 			// loop over known pods and confirm they were in most recent
 			// listing operation above
@@ -213,3 +231,34 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 }
 
 var _ Provider = &Kubernetes{}
+
+// isSelf returns true if the given address matches any local addresses
+// TODO: this is probably not the best way to do this, make a remote call instead?
+func (k *Kubernetes) isSelf(address string) bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		k.logger.Errorf("failed to get addresses, %v", err)
+		return false
+	}
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			log.Fatalf("failed to read addr, %v", err)
+		} else {
+			// handle err
+			for _, interfaceAddress := range addrs {
+				var ip net.IP
+				switch v := interfaceAddress.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip.String() == address {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
