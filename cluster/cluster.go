@@ -26,22 +26,17 @@ const (
 )
 
 type Cluster struct {
-	partitionCount uint32
-	// todo: make this generic
-	members  membership.Provider
-	node     *raftwrapper.Node
-	nodeData *fsm.ProtoFsm
-
-	mtx       *sync.RWMutex
-	isStarted bool
-
-	grpcServer *grpc.Server
-
+	mtx              *sync.RWMutex
+	isStarted        bool
+	partitionCount   uint32
+	members          membership.Provider
+	node             *raftwrapper.Node
+	nodeData         *fsm.ProtoFsm
+	grpcServer       *grpc.Server
 	peerObservations <-chan hraft.Observation
 	leaderChanges    <-chan hraft.Observation
-
-	msgHandler Handler
-	logger     log.Logger
+	msgHandler       Handler
+	logger           log.Logger
 }
 
 func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider, logger log.Logger) *Cluster {
@@ -206,111 +201,119 @@ func (n *Cluster) handleLeaderObservations() {
 // have joined, with a goal of evenly distributing the work.
 func (n *Cluster) leaderRebalance() {
 	for {
+		// wait 3 seconds
+		// TODO: make configurable
 		time.Sleep(time.Second * 3)
-		if n.node.IsLeader() {
-			// get active peers
-			peerMap := map[string]*raftwrapper.Peer{}
-			activePeerIDs := make([]string, 0)
-			for _, peer := range n.node.GetPeers() {
-				if peer.IsReady() {
-					peerMap[peer.ID] = peer
-					activePeerIDs = append(activePeerIDs, peer.ID)
-				}
+		// exit if not leader
+		if !n.node.IsLeader() {
+			continue
+		}
+		// create a context for each loop
+		// TODO: should this be a different context?
+		ctx := context.Background()
+		// get active peers
+		peerMap := map[string]*raftwrapper.Peer{}
+		activePeerIDs := make([]string, 0)
+		for _, peer := range n.node.GetPeers() {
+			if peer.IsReady() {
+				peerMap[peer.ID] = peer
+				activePeerIDs = append(activePeerIDs, peer.ID)
 			}
-			// get current partitions
-			currentPartitions := make(map[uint32]string, n.partitionCount)
-			for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
-				partition, err := n.getPartition(partitionID)
+		}
+		// get current partitions
+		currentPartitions := make(map[uint32]string, n.partitionCount)
+		for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
+			partition, err := n.getPartition(partitionID)
+			if err != nil {
+				n.logger.Infof("failed to get owner, partition=%d, %v", partitionID, err)
+			}
+			if partition.GetOwner() != "" && partition.AcceptingMessages {
+				currentPartitions[partitionID] = partition.GetOwner()
+			}
+		}
+		// compute rebalance
+		rebalancedOutput := rebalance.ComputeRebalance(n.partitionCount, currentPartitions, activePeerIDs)
+		n.logger.Infof("moving %d partitions to new peers", len(rebalancedOutput))
+		// apply any rebalance changes to the cluster
+		for partitionID, newPeerID := range rebalancedOutput {
+			currentPeerID, isMapped := currentPartitions[partitionID]
+			// determine if this peer is online
+			_, currentPeerIsOnline := peerMap[currentPeerID]
+			// if the partition is already on the correct node, continue
+			if currentPeerID == newPeerID {
+				continue
+			}
+			// if it is mapped and the peer is online, shut down the partition
+			if isMapped && currentPeerIsOnline {
+				// do 2-phase shutdown
+				// first, pause the partition
+				err := n.setPartition(partitionID, currentPeerID, false)
 				if err != nil {
-					n.logger.Infof("failed to get owner, partition=%d, %v", partitionID, err)
-				}
-				if partition.GetOwner() != "" && partition.AcceptingMessages {
-					currentPartitions[partitionID] = partition.GetOwner()
-				}
-			}
-			// compute rebalance
-			rebalancedOutput := rebalance.ComputeRebalance(n.partitionCount, currentPartitions, activePeerIDs)
-			// apply any rebalance changes to the cluster
-			for partitionID, newPeerID := range rebalancedOutput {
-				currentPeerID, isMapped := currentPartitions[partitionID]
-				ctx := context.Background()
-				// determine if this peer is online
-				_, currentPeerIsOnline := peerMap[currentPeerID]
-				// if the partition is already on the correct node, continue
-				if currentPeerID == newPeerID {
-					continue
-				}
-				// if it is mapped and the peer is online, shut down the partition
-				if isMapped && currentPeerIsOnline {
-					// do 2-phase shutdown
-					// first, pause the partition
-					err := n.setPartition(partitionID, currentPeerID, false)
-					if err != nil {
-						n.logger.Error(err.Error())
-						continue
-					}
-					// then, invoke shutdown on owner
-					currentPeer, err := n.node.GetPeer(currentPeerID)
-					if err != nil {
-						// TODO: make this rollback smarter
-						continue
-					}
-					shutdownRequest := &partipb.ShutdownPartitionRequest{
-						PartitionId: partitionID,
-					}
-					resp, err := getClient(ctx, currentPeer).ShutdownPartition(ctx, shutdownRequest)
-					if err != nil {
-						// TODO: this means that the shutdown grpc call failed. when a node goes down,
-						// this call will definitely fail. think about if there are other reasons this
-						// might fail, and perhaps have some kind of retry here?
-						n.logger.Warningf("failed to shutdown partition %d, %v", partitionID, err)
-						continue
-					} else if !resp.GetSuccess() {
-						continue
-					}
-				}
-				// now, assign a new owner, but don't accept new messages
-				if err := n.setPartition(partitionID, newPeerID, false); err != nil {
-					// TODO: make this smarter
 					n.logger.Error(err.Error())
 					continue
 				}
-				// then, invoke startup on new owner
-				newPeer, err := n.node.GetPeer(newPeerID)
+				// then, invoke shutdown on owner
+				currentPeer, err := n.node.GetPeer(currentPeerID)
 				if err != nil {
-					// TODO: make this smarter
+					n.logger.Errorf("could not get peer %s, %v", currentPeerID, err)
+					// TODO: make this rollback smarter
 					continue
 				}
-				newPeerClient := getClient(ctx, newPeer)
-				// wait until the peer has synced
-				for {
-					// use the stats endpoint to look up the partition
-					// mapping on the new node
-					statsResp, err := newPeerClient.Stats(ctx, &partipb.StatsRequest{})
-					remoteOwner, exists := statsResp.GetPartitionOwners()[partitionID]
-					if err == nil && exists && remoteOwner == newPeerID {
-						break
-					}
-					time.Sleep(time.Millisecond * 100)
+				shutdownRequest := &partipb.ShutdownPartitionRequest{
+					PartitionId: partitionID,
 				}
-				// start the partition
-				startupResp, err := newPeerClient.StartPartition(
-					ctx,
-					&partipb.StartPartitionRequest{PartitionId: partitionID},
-				)
+				resp, err := getClient(ctx, currentPeer).ShutdownPartition(ctx, shutdownRequest)
 				if err != nil {
-					n.logger.Infof("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
+					// TODO: this means that the shutdown grpc call failed. when a node goes down,
+					// this call will definitely fail. think about if there are other reasons this
+					// might fail, and perhaps have some kind of retry here?
+					n.logger.Warningf("failed to shutdown partition %d, %v", partitionID, err)
 					continue
-				} else if !startupResp.GetSuccess() {
-					n.logger.Infof("node (%s) failed to start partition (%d)", newPeerID, partitionID)
-					continue
-				}
-				// unpause the partition on new node
-				if err := n.setPartition(partitionID, newPeerID, true); err != nil {
-					// TODO decide whether to panic or not
-					n.logger.Error(err.Error())
+				} else if !resp.GetSuccess() {
 					continue
 				}
+			}
+			// now, assign a new owner, but don't accept new messages
+			if err := n.setPartition(partitionID, newPeerID, false); err != nil {
+				// TODO: make this smarter
+				n.logger.Error(err.Error())
+				continue
+			}
+			// then, invoke startup on new owner
+			newPeer, err := n.node.GetPeer(newPeerID)
+			if err != nil {
+				// TODO: make this smarter
+				continue
+			}
+			newPeerClient := getClient(ctx, newPeer)
+			// wait until the peer has synced
+			for {
+				// use the stats endpoint to look up the partition
+				// mapping on the new node
+				statsResp, err := newPeerClient.Stats(ctx, &partipb.StatsRequest{})
+				remoteOwner, exists := statsResp.GetPartitionOwners()[partitionID]
+				if err == nil && exists && remoteOwner == newPeerID {
+					break
+				}
+				time.Sleep(time.Millisecond * 100)
+			}
+			// start the partition
+			startupResp, err := newPeerClient.StartPartition(
+				ctx,
+				&partipb.StartPartitionRequest{PartitionId: partitionID},
+			)
+			if err != nil {
+				n.logger.Infof("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
+				continue
+			} else if !startupResp.GetSuccess() {
+				n.logger.Infof("node (%s) failed to start partition (%d)", newPeerID, partitionID)
+				continue
+			}
+			// unpause the partition on new node
+			if err := n.setPartition(partitionID, newPeerID, true); err != nil {
+				// TODO decide whether to panic or not
+				n.logger.Error(err.Error())
+				continue
 			}
 		}
 	}

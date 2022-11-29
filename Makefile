@@ -22,9 +22,8 @@ build-local:
 .PHONY: example-rm
 example-rm:
 	kubectl delete -f ./example/k8s.yml
-	minikube image rm parti-example:dev
 
 .PHONY: example-up
 example-up:
-	minikube image load parti-example:dev
+	minikube image load --overwrite=true parti-example:dev
 	kubectl apply -f ./example/k8s.yml

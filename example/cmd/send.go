@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	sendCMD.Flags().String("addr", "", "grpc address")
+	sendCMD.Flags().String("addr", ":50001", "grpc address")
 	sendCMD.Flags().Uint32("partition", 0, "partition to send")
 
 	rootCmd.AddCommand(sendCMD)
