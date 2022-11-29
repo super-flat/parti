@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -52,12 +50,15 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 		logger = log.DefaultLogger
 	}
 
+	grpcServer := grpc.NewServer()
+
 	// instantiate the raft node
 	node, err := raftwrapper.NewNode(
 		int(raftPort),
 		raftFsm,
 		ser,
 		logger,
+		grpcServer,
 	)
 	if err != nil {
 		panic(err)
@@ -109,11 +110,8 @@ func (n *Cluster) Stop(ctx context.Context) {
 	if n.isStarted {
 		n.logger.Info("Shutting down node")
 		n.grpcServer.GracefulStop()
-		go n.node.Stop()
 		n.members.Stop(ctx)
-		// waits for easy raft shutdown
-		// TODO: sometimes this never receives, so disabling this for now
-		n.node.AwaitShutdown()
+		n.node.Stop()
 		n.logger.Info("Completed node shutdown")
 	}
 	n.isStarted = false
@@ -133,16 +131,24 @@ func (n *Cluster) Start(ctx context.Context) error {
 	partipb.RegisterClusteringServer(n.node.GrpcServer, clusteringServer)
 	// start the underlying raft node
 
-	isLeaderEnv := os.Getenv("RAFT_LEADER")
-	isLeader := strings.ToLower(isLeaderEnv) == "true"
-	n.logger.Infof("STARTING AS LEADER %v because env var '%s'", isLeader, isLeaderEnv)
-	_, err := n.node.Start(ctx, isLeader)
-	if err != nil {
-		return err
-	}
 	// read member events
 	memberEvents, err := n.members.Listen(ctx)
 	if err != nil {
+		return err
+	}
+
+	isLeader := true
+	// isLeader := false
+	// select {
+	// case <-memberEvents:
+	// 	isLeader = false
+	// case <-time.After(time.Second * 10):
+	// 	isLeader = true
+	// }
+
+	// n.logger.Infof("STARTING AS LEADER %v", isLeader)
+
+	if err := n.node.Start(ctx, isLeader); err != nil {
 		return err
 	}
 

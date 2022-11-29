@@ -48,7 +48,6 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 	for k, v := range podLabels {
 		podLabels[k] = v
 	}
-
 	return &Kubernetes{
 		logger:    partilog.DefaultLogger, // TODO move to a config
 		namespace: namespace,

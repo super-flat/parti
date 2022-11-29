@@ -35,13 +35,12 @@ type Node struct {
 	Serializer       serializer.Serializer
 	stopped          *uint32
 	logger           log.Logger
-	stoppedCh        chan interface{}
 	mtx              *sync.Mutex
 	isStarted        bool
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger) (*Node, error) {
+func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 	nodeID := newNodeID(6)
@@ -83,8 +82,6 @@ func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, 
 		return nil, err
 	}
 
-	grpcServer := grpc.NewServer()
-
 	// initial stopped flag
 	var stopped uint32
 
@@ -108,37 +105,19 @@ func (n *Node) WithLogger(logger log.Logger) {
 	n.logger = logger
 }
 
-// Start starts the Node and returns a channel that indicates, that the node has been stopped properly
-func (n *Node) Start(ctx context.Context, isLeader bool) (chan interface{}, error) {
+// Start starts the Node
+func (n *Node) Start(ctx context.Context, isLeader bool) error {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	if n.isStarted {
-		return nil, errors.New("already started")
-	}
-
-	if isLeader {
-		// raft server
-		configuration := hraft.Configuration{
-			Servers: []hraft.Server{
-				{
-					ID:      hraft.ServerID(n.ID),
-					Address: n.TransportManager.Transport().LocalAddr(),
-				},
-			},
-		}
-		f := n.Raft.BootstrapCluster(configuration)
-		err := f.Error()
-		if err != nil {
-			return nil, err
-		}
+		return errors.New("already started")
 	}
 
 	// register management services
 	n.TransportManager.Register(n.GrpcServer)
-
 	// register custom raft RPC
 	raftRPCServer := NewRaftRPCServer(n)
 	partipb.RegisterRaftServer(n.GrpcServer, raftRPCServer)
@@ -155,6 +134,23 @@ func (n *Node) Start(ctx context.Context, isLeader bool) (chan interface{}, erro
 		}
 	}()
 
+	if isLeader {
+		// raft server
+		configuration := hraft.Configuration{
+			Servers: []hraft.Server{
+				{
+					ID:      hraft.ServerID(n.ID),
+					Address: n.TransportManager.Transport().LocalAddr(),
+				},
+			},
+		}
+		f := n.Raft.BootstrapCluster(configuration)
+		err := f.Error()
+		if err != nil {
+			return err
+		}
+	}
+
 	// handle interruption
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT, syscall.SIGTERM)
@@ -164,11 +160,10 @@ func (n *Node) Start(ctx context.Context, isLeader bool) (chan interface{}, erro
 	}()
 
 	n.logger.Infof("Node started on port %d\n", n.RaftPort)
-	n.stoppedCh = make(chan interface{})
 
 	n.isStarted = true
 
-	return n.stoppedCh, nil
+	return nil
 }
 
 // Stop stops the node and notifies on stopped channel returned in Start
@@ -188,12 +183,7 @@ func (n *Node) Stop() {
 		n.logger.Info("Raft stopped")
 		n.GrpcServer.GracefulStop()
 		n.isStarted = false
-		n.stoppedCh <- true
 	}
-}
-
-func (n *Node) AwaitShutdown() {
-	<-n.stoppedCh
 }
 
 func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
