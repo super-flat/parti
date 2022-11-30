@@ -10,6 +10,7 @@ import (
 	"github.com/super-flat/parti/cluster/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type ProtoFsm struct {
@@ -61,6 +62,7 @@ func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 	case *partipb.FsmGetRequest:
 		output, err := p.Get(v.GetGroup(), v.GetKey())
 		return output, err
+
 	case *partipb.FsmPutRequest:
 		value, err := v.GetValue().UnmarshalNew()
 		if err != nil {
@@ -68,9 +70,28 @@ func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 		}
 		err = p.put(v.GetGroup(), v.GetKey(), value)
 		return nil, err
+
 	case *partipb.FsmRemoveRequest:
 		p.remove(v.GetGroup(), v.GetKey())
 		return nil, nil
+
+	case *partipb.BulkFsmPutRequest:
+		requests := v.GetRequests()
+		values := make([]protoreflect.ProtoMessage, len(requests))
+		for ix, request := range requests {
+			value, err := request.GetValue().UnmarshalNew()
+			if err != nil {
+				return nil, err
+			}
+			values[ix] = value
+		}
+		for ix := 0; ix < len(requests); ix++ {
+			if err := p.put(requests[ix].GetGroup(), requests[ix].GetKey(), values[ix]); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+
 	default:
 		// TODO: decide if this is the right design
 		return nil, errors.New("unknown request type")

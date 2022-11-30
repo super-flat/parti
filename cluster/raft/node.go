@@ -13,6 +13,7 @@ import (
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
+	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/log"
@@ -64,8 +65,8 @@ func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, 
 
 	// snapshot store that discards everything
 	// TODO: see if there's any reason not to use this inmem snapshot store
-	// var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
-	var snapshotStore hraft.SnapshotStore = hraft.NewDiscardSnapshotStore()
+	var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
+	// var snapshotStore hraft.SnapshotStore = hraft.NewDiscardSnapshotStore()
 
 	// grpc transport
 	grpcTransport := transport.New(

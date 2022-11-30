@@ -347,7 +347,7 @@ type GetPeerDetailsResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	ServerId      string `protobuf:"bytes,1,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
-	DiscoveryPort uint32 `protobuf:"varint,2,opt,name=discovery_port,json=discoveryPort,proto3" json:"discovery_port,omitempty"`
+	DiscoveryPort uint32 `protobuf:"varint,2,opt,name=discovery_port,json=discoveryPort,proto3" json:"discovery_port,omitempty"` // bool is_in_cluster = 3;
 }
 
 func (x *GetPeerDetailsResponse) Reset() {

@@ -27,3 +27,7 @@ message FsmGroup {
 message FsmGroups {
     map<string, FsmGroup> groups = 1;
 }
+
+message BulkFsmPutRequest {
+    repeated FsmPutRequest requests = 1;
+}
