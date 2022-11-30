@@ -106,7 +106,7 @@ func (n *Node) WithLogger(logger log.Logger) {
 }
 
 // Start starts the Node
-func (n *Node) Start(ctx context.Context, isLeader bool) error {
+func (n *Node) Start(ctx context.Context, bootstrap bool) error {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
@@ -134,7 +134,7 @@ func (n *Node) Start(ctx context.Context, isLeader bool) error {
 		}
 	}()
 
-	if isLeader {
+	if bootstrap {
 		// raft server
 		configuration := hraft.Configuration{
 			Servers: []hraft.Server{

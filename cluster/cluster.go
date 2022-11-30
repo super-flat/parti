@@ -22,7 +22,6 @@ import (
 
 const (
 	partitionsGroupName = "partitions"
-	portsGroupName      = "ports"
 )
 
 type Cluster struct {
@@ -76,14 +75,14 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 	}
 }
 
-func (n *Cluster) handleMemberEvents(events chan membership.Event) {
+func (n *Cluster) handleMemberEvents(events <-chan membership.Event) {
 	n.logger.Info("begin listening for member changes")
 	for event := range events {
 		if !n.node.IsLeader() {
 			n.logger.Debugf("skipping event because not leader")
 			continue
 		}
-		n.logger.Infof("received event for addr %s:%d", event.Host, event.Port)
+		n.logger.Debugf("received event for addr %s:%d", event.Host, event.Port)
 		switch event.Change {
 		case membership.MemberAdded:
 			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
@@ -101,6 +100,7 @@ func (n *Cluster) handleMemberEvents(events chan membership.Event) {
 			}
 		}
 	}
+	n.logger.Info("stopped listening for member changes")
 }
 
 // Stop shuts down this node
@@ -154,11 +154,11 @@ func (n *Cluster) Start(ctx context.Context) error {
 
 	go n.handleMemberEvents(memberEvents)
 	// handle peer observations
-	n.registerPeerObserver()
-	go n.handlePeerObservations()
+	// n.registerPeerObserver()
+	// go n.handlePeerObservations()
 	// handle leader changes
-	n.registerLeaderObserver()
-	go n.handleLeaderObservations()
+	// n.registerLeaderObserver()
+	// go n.handleLeaderObservations()
 	// do leader things
 	go n.leaderRebalance()
 	// complete startup
@@ -192,11 +192,6 @@ func (n *Cluster) handlePeerObservations() {
 		peerObservation, ok := observation.Data.(hraft.PeerObservation)
 		if ok && n.node.IsLeader() {
 			if peerObservation.Removed {
-				// remove from the list of ports
-				if err := raftwrapper.RaftApplyDelete(n.node, portsGroupName, string(peerObservation.Peer.ID)); err != nil {
-					// TODO whether to exit the system
-					n.logger.Error(err.Error())
-				}
 				// remove from the list of partitions
 				if err := raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID)); err != nil {
 					// TODO whether to exit the system
