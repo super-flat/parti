@@ -1,4 +1,4 @@
-package raftwrapper
+package raft
 
 import (
 	"context"
@@ -7,23 +7,23 @@ import (
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
-type RaftRPC struct {
+type RPCServer struct {
 	node *Node
 }
 
-var _ partipb.RaftServer = &RaftRPC{}
+var _ partipb.RaftServer = &RPCServer{}
 
-func NewRaftRPCServer(node *Node) *RaftRPC {
-	return &RaftRPC{node: node}
+func NewRPCServer(node *Node) *RPCServer {
+	return &RPCServer{node: node}
 }
 
-func (r RaftRPC) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
+func (r RPCServer) GetPeerDetails(context.Context, *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
 	return &partipb.GetPeerDetailsResponse{
 		ServerId: r.node.ID,
 	}, nil
 }
 
-func (r RaftRPC) ApplyLog(ctx context.Context, request *partipb.ApplyLogRequest) (*partipb.ApplyLogResponse, error) {
+func (r RPCServer) ApplyLog(ctx context.Context, request *partipb.ApplyLogRequest) (*partipb.ApplyLogResponse, error) {
 	// TODO: pass this in?
 	timeout := time.Second
 	result := r.node.Raft.Apply(request.GetRequest(), timeout)

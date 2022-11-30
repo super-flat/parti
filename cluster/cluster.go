@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
 	"github.com/super-flat/parti/cluster/membership"
-	raftwrapper "github.com/super-flat/parti/cluster/raft"
+	raft "github.com/super-flat/parti/cluster/raft"
 	"github.com/super-flat/parti/cluster/raft/fsm"
 	"github.com/super-flat/parti/cluster/raft/serializer"
 	"github.com/super-flat/parti/cluster/rebalance"
@@ -25,17 +24,15 @@ const (
 )
 
 type Cluster struct {
-	mtx              *sync.RWMutex
-	isStarted        bool
-	partitionCount   uint32
-	members          membership.Provider
-	node             *raftwrapper.Node
-	nodeData         *fsm.ProtoFsm
-	grpcServer       *grpc.Server
-	peerObservations <-chan hraft.Observation
-	leaderChanges    <-chan hraft.Observation
-	msgHandler       Handler
-	logger           log.Logger
+	mtx            *sync.RWMutex
+	isStarted      bool
+	partitionCount uint32
+	members        membership.Provider
+	node           *raft.Node
+	nodeData       *fsm.ProtoFsm
+	grpcServer     *grpc.Server
+	msgHandler     Handler
+	logger         log.Logger
 }
 
 func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider, logger log.Logger) *Cluster {
@@ -52,7 +49,7 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 	grpcServer := grpc.NewServer()
 
 	// instantiate the raft node
-	node, err := raftwrapper.NewNode(
+	node, err := raft.NewNode(
 		int(raftPort),
 		raftFsm,
 		ser,
@@ -166,74 +163,6 @@ func (n *Cluster) Start(ctx context.Context) error {
 	return nil
 }
 
-// registerPeerObserver adds an `observer` to the raft cluster that receives
-// any PeerObservation changes and forwards them to a channel
-func (n *Cluster) registerPeerObserver() {
-	if n.peerObservations != nil {
-		return
-	}
-	observerCh := make(chan hraft.Observation, 100)
-	filterFn := func(o *hraft.Observation) bool {
-		switch o.Data.(type) {
-		case hraft.PeerObservation:
-			return true
-		default:
-			return false
-		}
-	}
-	observer := hraft.NewObserver(observerCh, true, hraft.FilterFn(filterFn))
-	n.node.Raft.RegisterObserver(observer)
-	n.peerObservations = observerCh
-}
-
-// handlePeerObservations handles inbound peer observations from raft
-func (n *Cluster) handlePeerObservations() {
-	for observation := range n.peerObservations {
-		peerObservation, ok := observation.Data.(hraft.PeerObservation)
-		if ok && n.node.IsLeader() {
-			if peerObservation.Removed {
-				// remove from the list of partitions
-				if err := raftwrapper.RaftApplyDelete(n.node, partitionsGroupName, string(peerObservation.Peer.ID)); err != nil {
-					// TODO whether to exit the system
-					n.logger.Error(err.Error())
-				}
-			}
-		}
-	}
-}
-
-// registerLeaderObserver subscribes to leadership changes on the raft
-// cluster
-func (n *Cluster) registerLeaderObserver() {
-	if n.leaderChanges != nil {
-		return
-	}
-	leaderCh := make(chan hraft.Observation, 10)
-	filterFn := func(o *hraft.Observation) bool {
-		switch o.Data.(type) {
-		case hraft.LeaderObservation:
-			return true
-		default:
-			return false
-		}
-	}
-	observer := hraft.NewObserver(leaderCh, true, hraft.FilterFn(filterFn))
-	n.node.Raft.RegisterObserver(observer)
-	n.leaderChanges = leaderCh
-}
-
-// handleLeaderObservations handles each leadership change from the
-// observation channel
-func (n *Cluster) handleLeaderObservations() {
-	for observation := range n.leaderChanges {
-		leaderObv, ok := observation.Data.(hraft.LeaderObservation)
-		if !ok {
-			continue
-		}
-		n.logger.Infof("new leader: (%s) at (%s)", leaderObv.LeaderID, leaderObv.LeaderAddr)
-	}
-}
-
 // leaderRebalance allows the leader node to delegate partitions to its
 // cluster peers, considering nodes that have left and new nodes that
 // have joined, with a goal of evenly distributing the work.
@@ -250,7 +179,7 @@ func (n *Cluster) leaderRebalance() {
 		// TODO: should this be a different context?
 		ctx := context.Background()
 		// get active peers
-		peerMap := map[string]*raftwrapper.Peer{}
+		peerMap := map[string]*raft.Peer{}
 		activePeerIDs := make([]string, 0)
 		for _, peer := range n.node.GetPeers() {
 			if peer.IsReady() {
@@ -381,7 +310,7 @@ func (n *Cluster) setPartition(partitionID uint32, nodeID string, acceptMessages
 		AcceptingMessages: acceptMessages,
 	}
 
-	return raftwrapper.RaftApplyPut(n.node, partitionsGroupName, key, value)
+	return raft.Put(n.node, partitionsGroupName, key, value)
 }
 
 // PartitionMappings returns a map of partition to node ID
@@ -542,7 +471,7 @@ func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 // getClient returns a gRPC client for the given peer
 // TODO: if peer is self, return the local implementation instead of forcing
 // a gRPC call
-func getClient(ctx context.Context, p *raftwrapper.Peer) partipb.ClusteringClient {
+func getClient(ctx context.Context, p *raft.Peer) partipb.ClusteringClient {
 	// make the grpc client address
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	// set up the grpc client connection

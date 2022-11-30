@@ -1,4 +1,4 @@
-package raftwrapper
+package raft
 
 import (
 	"fmt"

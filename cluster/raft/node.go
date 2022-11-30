@@ -1,4 +1,4 @@
-package raftwrapper
+package raft
 
 import (
 	"context"
@@ -119,7 +119,7 @@ func (n *Node) Start(ctx context.Context, bootstrap bool) error {
 	// register management services
 	n.TransportManager.Register(n.GrpcServer)
 	// register custom raft RPC
-	raftRPCServer := NewRaftRPCServer(n)
+	raftRPCServer := NewRPCServer(n)
 	partipb.RegisterRaftServer(n.GrpcServer, raftRPCServer)
 
 	// set up the tpc listener
@@ -387,13 +387,15 @@ func newNodeID(size int) string {
 	return string(b)
 }
 
-func RaftApplyDelete(n *Node, group string, key string) error {
+// Delete a key from the cluster state
+func Delete(n *Node, group string, key string) error {
 	request := &partipb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.RaftApply(request, time.Second)
 	return err
 }
 
-func RaftApplyPut(n *Node, group string, key string, value proto.Message) error {
+// Put a key and value in cluster state
+func Put(n *Node, group string, key string, value proto.Message) error {
 	anyVal, err := anypb.New(value)
 	if err != nil {
 		return err
@@ -403,7 +405,8 @@ func RaftApplyPut(n *Node, group string, key string, value proto.Message) error 
 	return err
 }
 
-func RaftApplyGet[T any](n *Node, group, key string) (T, error) {
+// Get the value for a key in cluster state
+func Get[T any](n *Node, group, key string) (T, error) {
 	request := &partipb.FsmGetRequest{Group: group, Key: key}
 	result, err := n.RaftApply(request, time.Second)
 	var output T
