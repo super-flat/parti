@@ -44,7 +44,12 @@ type Node struct {
 func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
-	nodeID := newNodeID(6)
+	// addr := fmt.Sprintf("%s:%d", podIP, raftPort)
+	// nodeID := newNodeID(6)
+	nodeID := os.Getenv("POD_NAME")
+	if nodeID == "" {
+		return nil, errors.New("missing POD_NAME")
+	}
 
 	raftConf := hraft.DefaultConfig()
 	raftConf.LocalID = hraft.ServerID(nodeID)
@@ -136,12 +141,19 @@ func (n *Node) Start(ctx context.Context, bootstrap bool) error {
 	}()
 
 	if bootstrap {
+		podIP := os.Getenv("POD_IP")
+		if podIP == "" {
+			return errors.New("missing POD_IP")
+		}
+		addr := fmt.Sprintf("%s:%d", podIP, n.RaftPort)
+
 		// raft server
 		configuration := hraft.Configuration{
 			Servers: []hraft.Server{
 				{
-					ID:      hraft.ServerID(n.ID),
-					Address: n.TransportManager.Transport().LocalAddr(),
+					ID: hraft.ServerID(n.ID),
+					// Address: n.TransportManager.Transport().LocalAddr(),
+					Address: hraft.ServerAddress(addr),
 				},
 			},
 		}
@@ -161,6 +173,22 @@ func (n *Node) Start(ctx context.Context, bootstrap bool) error {
 	}()
 
 	n.logger.Infof("Node started on port %d\n", n.RaftPort)
+
+	// go func() {
+	// 	for {
+	// 		time.Sleep(time.Second * 5)
+	// 		n.logger.Debug("logging peers...")
+	// 		config := n.Raft.GetConfiguration()
+	// 		if err := config.Error(); err != nil {
+	// 			n.logger.Errorf("failed to get raft config, %v", err)
+	// 		} else {
+	// 			for _, s := range n.Raft.GetConfiguration().Configuration().Servers {
+	// 				n.logger.Debugf("found peer %s @ %s", s.ID, s.Address)
+	// 			}
+	// 		}
+
+	// 	}
+	// }()
 
 	n.isStarted = true
 
@@ -259,13 +287,7 @@ func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{
 	if err != nil {
 		return nil, err
 	}
-	// if leader, do local
-	if n.IsLeader() {
-		return n.raftApplyLocalLeader(payload, timeout)
-	}
-	// otherwise, run on remote leader
-	// TODO: pass in timeout somehow and serialize in proto?
-	return n.raftApplyRemoteLeader(payload)
+	return n.raftApplyLocalLeader(payload, timeout)
 }
 
 func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
@@ -284,40 +306,10 @@ func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (inte
 	}
 }
 
-func (n *Node) raftApplyRemoteLeader(payload []byte) (interface{}, error) {
-	if !n.HasLeader() {
-		return nil, errors.New("unknown leader")
-	}
-	ctx := context.Background()
-	// get the leader address
-	leaderAddr, _ := n.Raft.LeaderWithID()
-	var opt grpc.DialOption = grpc.EmptyDialOption{}
-	conn, err := grpc.DialContext(ctx,
-		string(leaderAddr),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-		opt)
-
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close() // nolint
-	client := partipb.NewRaftClient(conn)
-
-	response, err := client.ApplyLog(ctx, &partipb.ApplyLogRequest{Request: payload})
-	if err != nil {
-		return nil, err
-	}
-	result, err := n.Serializer.Deserialize(response.Response)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
 // IsLeader returns true if the current node is the cluster leader
 func (n *Node) IsLeader() bool {
+	// _, id := n.Raft.LeaderWithID()
+	// return n.ID == string(id)
 	return n.Raft.VerifyLeader().Error() == nil
 }
 
@@ -332,6 +324,7 @@ func (n *Node) HasLeader() bool {
 func (n *Node) GetPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.RaftPort)
+	n.logger.Debugf("returning peer for self %s @ %s", n.ID, raftAddr)
 	return NewPeer(n.ID, raftAddr)
 }
 
@@ -374,6 +367,7 @@ func (n *Node) GetPeer(peerID string) (*Peer, error) {
 	if raftAddr == "" {
 		return nil, fmt.Errorf("could not find raft peer (%s)", peerID)
 	}
+	n.logger.Debugf("retrieved peer %s @ %s", peerID, raftAddr)
 	return NewPeer(peerID, raftAddr), nil
 }
 

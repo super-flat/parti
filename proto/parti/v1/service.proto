@@ -22,8 +22,6 @@ service Clustering {
 service Raft {
   // GetPeerDetails returns the node ID and discovery port
   rpc GetPeerDetails(GetPeerDetailsRequest) returns (GetPeerDetailsResponse);
-  // ApplyLog applies the provided request on the server if it is the leader
-  rpc ApplyLog(ApplyLogRequest) returns (ApplyLogResponse);
 };
 
 message StartPartitionRequest {
@@ -40,14 +38,6 @@ message ShutdownPartitionRequest {
 
 message ShutdownPartitionResponse {
   bool success = 1;
-}
-
-message ApplyLogRequest {
-  bytes request = 1;
-}
-
-message ApplyLogResponse {
-  bytes response = 1;
 }
 
 message GetPeerDetailsRequest {}
