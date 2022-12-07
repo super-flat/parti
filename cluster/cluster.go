@@ -143,7 +143,7 @@ func (n *Cluster) Start(ctx context.Context) error {
 	// 	isLeader = true
 	// }
 
-	// n.logger.Infof("STARTING AS LEADER %v", isLeader)
+	n.logger.Infof("STARTING AS LEADER %v", isLeader)
 
 	if err := n.node.Start(ctx, isLeader); err != nil {
 		return err

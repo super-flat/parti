@@ -36,6 +36,7 @@ var statsCMD = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(protojson.Format(resp))
+		marshaler := protojson.MarshalOptions{EmitUnpopulated: true, Multiline: true}
+		fmt.Println(marshaler.Format(resp))
 	},
 }
