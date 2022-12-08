@@ -152,7 +152,6 @@ func (n *Node) waitForBootstrap() {
 		if !n.isStarted {
 			return
 		}
-		time.Sleep(time.Second * 5)
 		numPeers := 0
 		cfg := n.Raft.GetConfiguration()
 		if err := cfg.Error(); err != nil {
@@ -167,6 +166,7 @@ func (n *Node) waitForBootstrap() {
 			return
 		}
 		n.logger.Debugf("waiting for raft peers, current state %s", n.Raft.State().String())
+		time.Sleep(time.Second)
 	}
 }
 

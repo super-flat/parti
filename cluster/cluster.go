@@ -169,11 +169,11 @@ func (n *Cluster) bootstrap(memberEvents chan membership.Event) {
 					n.logger.Debugf("found another better leader candidate, %v", resp.GetPeerId())
 					t = time.Now()
 				} else {
-					n.logger.Debugf("this node still the best candidate")
+					n.logger.Debugf("this node is a better candidate than %s", m.ID)
 				}
 			}
 
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 5):
 			n.logger.Debugf("no new member events received")
 			// this case advances the loop if we haven't seen a new peer event
 			// in 10 seconds
