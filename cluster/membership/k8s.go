@@ -11,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -84,7 +85,7 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan Event, error) {
 	}
 
 	// kick off loop in goroutine
-	go k.pollPods(runningContext)
+	// go k.pollPods(runningContext)
 	go k.listenChanges(runningContext)
 
 	// report started and return channel
@@ -111,12 +112,110 @@ func (k *Kubernetes) Stop(ctx context.Context) {
 // listenChanges subscribes to pod chagnes
 // TODO: Implement me!!!
 func (k *Kubernetes) listenChanges(ctx context.Context) {
+	k.logger.Debugf("creating a k8s watcher")
+	watchOpts := metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
+	}
+	var watcher watch.Interface
+	var err error
+	for {
+		watcher, err = k.k8sClient.CoreV1().Pods(k.namespace).Watch(ctx, watchOpts)
+		if err != nil {
+			k.logger.Error(err)
+			time.Sleep(time.Second)
+		} else {
+			break
+		}
+	}
+	// consume changes
 	for {
 		select {
 		case <-ctx.Done():
+			watcher.Stop()
 			return
-		default:
-			time.Sleep(time.Second * 5)
+
+		case event := <-watcher.ResultChan():
+			pod, ok := event.Object.(*v1.Pod)
+			if !ok {
+				k.logger.Error("unexpected type")
+				continue
+			}
+			k.logger.Debugf("received watch event %s for pod %s", event.Type, pod.Name)
+
+			if pod.Status.PodIP == "" {
+				k.logger.Debugf("pod %s does not have an IP yet", pod.Name)
+				continue
+			}
+
+			if k.isSelf(pod.Status.PodIP) {
+				continue
+			}
+
+			var newPeer *k8sPeer
+
+			for i := 0; i < len(pod.Spec.Containers) && newPeer == nil; i++ {
+				container := pod.Spec.Containers[i]
+				for _, port := range container.Ports {
+					if port.Name == k.portName {
+						// create the peer
+						newPeer = &k8sPeer{
+							ID:        pod.GetName(),
+							Address:   pod.Status.PodIP,
+							Port:      uint16(port.ContainerPort),
+							LastEvent: time.Now(),
+							IsLive:    true,
+						}
+						break
+					}
+				}
+			}
+
+			if newPeer == nil {
+				k.logger.Debugf("pod %s matched selector but did not have port named %s", pod.Name, k.portName)
+				continue
+			}
+
+			switch event.Type {
+			case watch.Added:
+				k.discoCh <- Event{
+					ID:     newPeer.ID,
+					Host:   newPeer.Address,
+					Port:   newPeer.Port,
+					Change: MemberAdded,
+				}
+
+			case watch.Deleted:
+				k.discoCh <- Event{
+					ID:     newPeer.ID,
+					Host:   newPeer.Address,
+					Port:   newPeer.Port,
+					Change: MemberRemoved,
+				}
+
+			case watch.Modified:
+				switch pod.Status.Phase {
+				case v1.PodRunning:
+					k.discoCh <- Event{
+						ID:     newPeer.ID,
+						Host:   newPeer.Address,
+						Port:   newPeer.Port,
+						Change: MemberPinged,
+					}
+				case v1.PodSucceeded, v1.PodFailed:
+					k.discoCh <- Event{
+						ID:     newPeer.ID,
+						Host:   newPeer.Address,
+						Port:   newPeer.Port,
+						Change: MemberRemoved,
+					}
+
+				default:
+					// pass
+				}
+
+			default:
+				k.logger.Debugf("watcher skipping event type %s", event.Type)
+			}
 		}
 	}
 }

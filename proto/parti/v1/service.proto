@@ -22,7 +22,18 @@ service Clustering {
 service Raft {
   // GetPeerDetails returns the node ID and discovery port
   rpc GetPeerDetails(GetPeerDetailsRequest) returns (GetPeerDetailsResponse);
+  //  Bootstrap can be called to determine a peer's readiness to form a raft cluster
+  rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
 };
+
+message BootstrapRequest {
+  string from_peer_id = 1;
+}
+
+message BootstrapResponse {
+  string peer_id = 1;
+  bool in_cluster = 2;
+}
 
 message StartPartitionRequest {
   uint32 partition_id = 1;

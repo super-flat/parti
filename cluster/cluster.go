@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,9 +107,9 @@ func (n *Cluster) Stop(ctx context.Context) {
 	defer n.mtx.Unlock()
 	if n.isStarted {
 		n.logger.Info("Shutting down node")
-		n.grpcServer.GracefulStop()
 		n.members.Stop(ctx)
 		n.node.Stop()
+		n.grpcServer.GracefulStop()
 		n.logger.Info("Completed node shutdown")
 	}
 	n.isStarted = false
@@ -134,33 +135,84 @@ func (n *Cluster) Start(ctx context.Context) error {
 		return err
 	}
 
-	isLeader := true
-	// isLeader := false
-	// select {
-	// case <-memberEvents:
-	// 	isLeader = false
-	// case <-time.After(time.Second * 10):
-	// 	isLeader = true
-	// }
-
-	n.logger.Infof("STARTING AS LEADER %v", isLeader)
-
-	if err := n.node.Start(ctx, isLeader); err != nil {
+	if err := n.node.Start(ctx); err != nil {
 		return err
 	}
 
+	n.bootstrap(memberEvents)
+	// handle member change events
 	go n.handleMemberEvents(memberEvents)
-	// handle peer observations
-	// n.registerPeerObserver()
-	// go n.handlePeerObservations()
-	// handle leader changes
-	// n.registerLeaderObserver()
-	// go n.handleLeaderObservations()
 	// do leader things
 	go n.leaderRebalance()
 	// complete startup
 	n.isStarted = true
 	return nil
+}
+
+func (n *Cluster) bootstrap(memberEvents chan membership.Event) {
+	n.logger.Debugf("begin bootstrap gossip")
+	t := time.Now()
+	for {
+		select {
+		case m := <-memberEvents:
+			n.logger.Debugf("checking peer %s", m.ID)
+			addr := fmt.Sprintf("%s:%d", m.Host, m.Port)
+			resp, err := n.callPeerBootstrap(addr)
+			if err != nil {
+				n.logger.Errorf("failed to call client %s bootstrap, %v", addr, err)
+			} else {
+				// if peer is in cluster or has a higher ID, wait more time
+				if resp.GetInCluster() {
+					n.logger.Debugf("found another active cluster")
+					t = time.Now()
+				} else if strings.Compare(resp.GetPeerId(), n.node.ID) > 0 {
+					n.logger.Debugf("found another better leader candidate, %v", resp.GetPeerId())
+					t = time.Now()
+				} else {
+					n.logger.Debugf("this node still the best candidate")
+				}
+			}
+
+		case <-time.After(time.Second * 10):
+			n.logger.Debugf("no new member events received")
+			// this case advances the loop if we haven't seen a new peer event
+			// in 10 seconds
+			// pass
+		}
+
+		if n.node.IsBootstrapped() {
+			n.logger.Debugf("bootstrap complete, joined another cluster")
+			return
+		}
+
+		if time.Since(t) > time.Second*10 {
+			// if we have seen no leader alternatives in 5 seconds, then
+			// bootstrap this node as the leader
+			n.logger.Debugf("hasn't found another leader peer, bootstrapping")
+			if err := n.node.Bootstrap(); err != nil {
+				n.logger.Errorf("failed to bootstrap node, %v", err)
+			} else {
+				return
+			}
+		}
+	}
+}
+
+func (n *Cluster) callPeerBootstrap(addr string) (*partipb.BootstrapResponse, error) {
+	var opt grpc.DialOption = grpc.EmptyDialOption{}
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx,
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(), opt)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close() // nolint
+	client := partipb.NewRaftClient(conn)
+	return client.Bootstrap(ctx, &partipb.BootstrapRequest{
+		FromPeerId: n.node.ID,
+	})
 }
 
 // leaderRebalance allows the leader node to delegate partitions to its

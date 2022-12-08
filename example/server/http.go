@@ -57,7 +57,7 @@ func (w *WebServer) Stop(ctx context.Context) {
 	if err := w.server.Shutdown(newCtx); err != nil {
 		log.Fatalf("webserver shutdown failed:%+v", err)
 	}
-	log.Print("webserver shut down properly")
+	log.Print("example webserver shut down properly")
 }
 
 func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
