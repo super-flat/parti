@@ -110,7 +110,6 @@ func (k *Kubernetes) Stop(ctx context.Context) {
 }
 
 // listenChanges subscribes to pod chagnes
-// TODO: Implement me!!!
 func (k *Kubernetes) listenChanges(ctx context.Context) {
 	k.logger.Debugf("creating a k8s watcher")
 	watchOpts := metav1.ListOptions{
