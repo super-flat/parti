@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -59,6 +60,15 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 		peerCache: make(map[string]*k8sPeer),
 		discoCh:   make(chan Event, 10),
 	}
+}
+
+// GetNodeID returns the pod name set by an environment variable
+func (k *Kubernetes) GetNodeID(ctx context.Context) (string, error) {
+	nodeID := os.Getenv("POD_NAME")
+	if nodeID == "" {
+		return "", errors.New("missing POD_NAME env var")
+	}
+	return nodeID, nil
 }
 
 // Listen returns a channel of membership change events

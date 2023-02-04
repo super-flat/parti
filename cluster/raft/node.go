@@ -40,15 +40,9 @@ type Node struct {
 }
 
 // NewNode returns an raft node
-func NewNode(raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
+func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
-	// addr := fmt.Sprintf("%s:%d", podIP, raftPort)
-	// nodeID := newNodeID(6)
-	nodeID := os.Getenv("POD_NAME")
-	if nodeID == "" {
-		return nil, errors.New("missing POD_NAME")
-	}
 
 	raftConf := hraft.DefaultConfig()
 	raftConf.LocalID = hraft.ServerID(nodeID)

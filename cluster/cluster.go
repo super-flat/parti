@@ -36,7 +36,13 @@ type Cluster struct {
 	logger         log.Logger
 }
 
-func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider, logger log.Logger) *Cluster {
+func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, partitionCount uint32, members membership.Provider, logger log.Logger) *Cluster {
+	// retrieve the node ID from the membership implementation
+	nodeID, err := members.GetNodeID(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	// raft fsm
 	raftFsm := fsm.NewProtoFsm()
 
@@ -51,6 +57,7 @@ func NewCluster(raftPort uint16, msgHandler Handler, partitionCount uint32, memb
 
 	// instantiate the raft node
 	node, err := raft.NewNode(
+		nodeID,
 		int(raftPort),
 		raftFsm,
 		ser,
