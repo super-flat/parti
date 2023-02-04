@@ -7,9 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
@@ -38,6 +36,7 @@ type Node struct {
 	logger           log.Logger
 	mtx              *sync.Mutex
 	isStarted        bool
+	isBootstrapped   bool
 }
 
 // NewNode returns an raft node
@@ -112,7 +111,7 @@ func (n *Node) WithLogger(logger log.Logger) {
 }
 
 // Start starts the Node
-func (n *Node) Start(ctx context.Context, bootstrap bool) error {
+func (n *Node) Start(ctx context.Context) error {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
@@ -140,58 +139,62 @@ func (n *Node) Start(ctx context.Context, bootstrap bool) error {
 		}
 	}()
 
-	if bootstrap {
-		podIP := os.Getenv("POD_IP")
-		if podIP == "" {
-			return errors.New("missing POD_IP")
-		}
-		addr := fmt.Sprintf("%s:%d", podIP, n.RaftPort)
-
-		// raft server
-		configuration := hraft.Configuration{
-			Servers: []hraft.Server{
-				{
-					ID: hraft.ServerID(n.ID),
-					// Address: n.TransportManager.Transport().LocalAddr(),
-					Address: hraft.ServerAddress(addr),
-				},
-			},
-		}
-		f := n.Raft.BootstrapCluster(configuration)
-		err := f.Error()
-		if err != nil {
-			return err
-		}
-	}
-
-	// handle interruption
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT, syscall.SIGTERM)
-	go func() {
-		<-sigs
-		n.Stop()
-	}()
-
 	n.logger.Infof("Node started on port %d\n", n.RaftPort)
 
-	// go func() {
-	// 	for {
-	// 		time.Sleep(time.Second * 5)
-	// 		n.logger.Debug("logging peers...")
-	// 		config := n.Raft.GetConfiguration()
-	// 		if err := config.Error(); err != nil {
-	// 			n.logger.Errorf("failed to get raft config, %v", err)
-	// 		} else {
-	// 			for _, s := range n.Raft.GetConfiguration().Configuration().Servers {
-	// 				n.logger.Debugf("found peer %s @ %s", s.ID, s.Address)
-	// 			}
-	// 		}
-
-	// 	}
-	// }()
-
 	n.isStarted = true
+	go n.waitForBootstrap()
 
+	return nil
+}
+
+func (n *Node) waitForBootstrap() {
+	for {
+		if !n.isStarted {
+			return
+		}
+		numPeers := 0
+		cfg := n.Raft.GetConfiguration()
+		if err := cfg.Error(); err != nil {
+			n.logger.Errorf("couldn't read config, %v", err)
+		} else {
+			numPeers = len(cfg.Configuration().Servers)
+		}
+		if numPeers > 0 {
+			n.mtx.Lock()
+			n.isBootstrapped = true
+			n.mtx.Unlock()
+			return
+		}
+		n.logger.Debugf("waiting for raft peers, current state %s", n.Raft.State().String())
+		time.Sleep(time.Second)
+	}
+}
+
+func (n *Node) IsBootstrapped() bool {
+	return n.isBootstrapped
+}
+
+func (n *Node) Bootstrap() error {
+	podIP := os.Getenv("POD_IP")
+	if podIP == "" {
+		return errors.New("missing POD_IP")
+	}
+	addr := fmt.Sprintf("%s:%d", podIP, n.RaftPort)
+
+	// raft server
+	configuration := hraft.Configuration{
+		Servers: []hraft.Server{
+			{
+				ID:      hraft.ServerID(n.ID),
+				Address: hraft.ServerAddress(addr),
+			},
+		},
+	}
+	f := n.Raft.BootstrapCluster(configuration)
+	err := f.Error()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

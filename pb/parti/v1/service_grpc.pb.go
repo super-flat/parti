@@ -264,6 +264,8 @@ var Clustering_ServiceDesc = grpc.ServiceDesc{
 type RaftClient interface {
 	// GetPeerDetails returns the node ID and discovery port
 	GetPeerDetails(ctx context.Context, in *GetPeerDetailsRequest, opts ...grpc.CallOption) (*GetPeerDetailsResponse, error)
+	//  Bootstrap can be called to determine a peer's readiness to form a raft cluster
+	Bootstrap(ctx context.Context, in *BootstrapRequest, opts ...grpc.CallOption) (*BootstrapResponse, error)
 }
 
 type raftClient struct {
@@ -283,12 +285,23 @@ func (c *raftClient) GetPeerDetails(ctx context.Context, in *GetPeerDetailsReque
 	return out, nil
 }
 
+func (c *raftClient) Bootstrap(ctx context.Context, in *BootstrapRequest, opts ...grpc.CallOption) (*BootstrapResponse, error) {
+	out := new(BootstrapResponse)
+	err := c.cc.Invoke(ctx, "/parti.v1.Raft/Bootstrap", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RaftServer is the server API for Raft service.
 // All implementations should embed UnimplementedRaftServer
 // for forward compatibility
 type RaftServer interface {
 	// GetPeerDetails returns the node ID and discovery port
 	GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error)
+	//  Bootstrap can be called to determine a peer's readiness to form a raft cluster
+	Bootstrap(context.Context, *BootstrapRequest) (*BootstrapResponse, error)
 }
 
 // UnimplementedRaftServer should be embedded to have forward compatible implementations.
@@ -297,6 +310,9 @@ type UnimplementedRaftServer struct {
 
 func (UnimplementedRaftServer) GetPeerDetails(context.Context, *GetPeerDetailsRequest) (*GetPeerDetailsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPeerDetails not implemented")
+}
+func (UnimplementedRaftServer) Bootstrap(context.Context, *BootstrapRequest) (*BootstrapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Bootstrap not implemented")
 }
 
 // UnsafeRaftServer may be embedded to opt out of forward compatibility for this service.
@@ -328,6 +344,24 @@ func _Raft_GetPeerDetails_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Raft_Bootstrap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BootstrapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).Bootstrap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/parti.v1.Raft/Bootstrap",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).Bootstrap(ctx, req.(*BootstrapRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -338,6 +372,10 @@ var Raft_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPeerDetails",
 			Handler:    _Raft_GetPeerDetails_Handler,
+		},
+		{
+			MethodName: "Bootstrap",
+			Handler:    _Raft_Bootstrap_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
