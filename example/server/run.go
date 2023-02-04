@@ -29,14 +29,16 @@ func Run() {
 	podLabels := map[string]string{"app": "parti"}
 	portName := "parti"
 	members := membership.NewKubernetes(namespace, podLabels, portName)
-
+	// configure a cluster
 	partiNode := cluster.NewCluster(
+		ctx,
 		cfg.RaftPort,
 		handler,
 		numPartitions,
 		members,
 		log.DefaultLogger,
 	)
+	// start the node
 	if err := partiNode.Start(ctx); err != nil {
 		panic(err)
 	}
