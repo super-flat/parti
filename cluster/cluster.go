@@ -83,18 +83,21 @@ func (n *Cluster) handleMemberEvents(events <-chan membership.Event) {
 		n.logger.Debugf("received event for addr %s:%d", event.Host, event.Port)
 		switch event.Change {
 		case membership.MemberAdded:
+			n.logger.Debugf("handling MemberAdded, node=%s", event.ID)
 			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
 				n.logger.Errorf("failed to add peer, %v", err)
 			}
 
 		case membership.MemberRemoved:
+			n.logger.Debugf("handling MemberRemoved, node=%s", event.ID)
 			if err := n.node.RemovePeer(event.Host, event.Port); err != nil {
-				n.logger.Errorf("failed to add peer, %v", err)
+				n.logger.Errorf("failed to remove peer, %v", err)
 			}
 
 		case membership.MemberPinged:
+			n.logger.Debugf("handling MemberPinged, node=%s", event.ID)
 			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
-				n.logger.Errorf("failed to add peer, %v", err)
+				n.logger.Errorf("failed to add pinged peer, %v", err)
 			}
 		}
 	}
@@ -146,6 +149,7 @@ func (n *Cluster) Start(ctx context.Context) error {
 	go n.leaderRebalance()
 	// complete startup
 	n.isStarted = true
+	n.logger.Debug("cluster is started")
 	return nil
 }
 
