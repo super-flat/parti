@@ -91,19 +91,19 @@ func (n *Cluster) handleMemberEvents(events <-chan membership.Event) {
 		switch event.Change {
 		case membership.MemberAdded:
 			n.logger.Debugf("handling MemberAdded, node=%s", event.ID)
-			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
+			if err := n.node.AddPeer(event.ID, event.Host, event.Port); err != nil {
 				n.logger.Errorf("failed to add peer, %v", err)
 			}
 
 		case membership.MemberRemoved:
 			n.logger.Debugf("handling MemberRemoved, node=%s", event.ID)
-			if err := n.node.RemovePeer(event.Host, event.Port); err != nil {
+			if err := n.node.RemovePeer(event.ID); err != nil {
 				n.logger.Errorf("failed to remove peer, %v", err)
 			}
 
 		case membership.MemberPinged:
 			n.logger.Debugf("handling MemberPinged, node=%s", event.ID)
-			if err := n.node.AddPeer(event.Host, event.Port); err != nil {
+			if err := n.node.AddPeer(event.ID, event.Host, event.Port); err != nil {
 				n.logger.Errorf("failed to add pinged peer, %v", err)
 			}
 		}
@@ -238,6 +238,7 @@ func (n *Cluster) leaderRebalance() {
 		if !n.node.IsLeader() {
 			continue
 		}
+		n.logger.Debug("start rebalance loop")
 		// create a context for each loop
 		// TODO: should this be a different context?
 		ctx := context.Background()
@@ -251,6 +252,7 @@ func (n *Cluster) leaderRebalance() {
 			}
 		}
 		// get current partitions
+		// map partitionID -> peerID that owns the partition
 		currentPartitions := make(map[uint32]string, n.partitionCount)
 		for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
 			partition, err := n.getPartition(partitionID)
@@ -266,12 +268,12 @@ func (n *Cluster) leaderRebalance() {
 		// apply any rebalance changes to the cluster
 		for partitionID, newPeerID := range rebalancedOutput {
 			currentPeerID, isMapped := currentPartitions[partitionID]
-			// determine if this peer is online
-			_, currentPeerIsOnline := peerMap[currentPeerID]
 			// if the partition is already on the correct node, continue
 			if currentPeerID == newPeerID {
 				continue
 			}
+			// determine if this peer is online
+			_, currentPeerIsOnline := peerMap[currentPeerID]
 			// if it is mapped and the peer is online, shut down the partition
 			if isMapped && currentPeerIsOnline {
 				// do 2-phase shutdown

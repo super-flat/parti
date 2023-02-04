@@ -233,46 +233,57 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 	return response, nil
 }
 
-func (n *Node) AddPeer(host string, port uint16) error {
+func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	if !n.IsLeader() {
 		return nil
 	}
+	// skip self
+	if nodeID == n.ID {
+		return nil
+	}
+	// compute peer addr
 	peerAddr := fmt.Sprintf("%s:%d", host, port)
-	// ensure no other peer at this address port
+
+	// ensure not duplicate peer
 	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-		if string(server.Address) == peerAddr {
-			n.logger.Debugf("skipping duplicate peer add %s", peerAddr)
+		if string(server.ID) == nodeID {
+			n.logger.Debugf("skipping duplicate peer add %s", nodeID)
 			return nil
 		}
 	}
+
 	// contact remote peer
 	detailsResp, err := n.getPeerDetails(peerAddr)
 	if err != nil {
 		n.logger.Error(err)
 		return err
 	}
-	// skip self
-	if detailsResp.GetServerId() == n.ID {
-		return nil
+	// confirm node ID match
+	if detailsResp.GetServerId() != nodeID {
+		return fmt.Errorf(
+			"remove server nodeID '%s' mismatch '%s'",
+			detailsResp.GetServerId(),
+			nodeID,
+		)
 	}
-	res := n.Raft.AddVoter(hraft.ServerID(detailsResp.GetServerId()), hraft.ServerAddress(peerAddr), 0, 0)
+	// add voter to raft
+	res := n.Raft.AddVoter(hraft.ServerID(nodeID), hraft.ServerAddress(peerAddr), 0, 0)
 	return res.Error()
 }
 
-func (n *Node) RemovePeer(host string, port uint16) error {
+func (n *Node) RemovePeer(nodeID string) error {
 	if !n.IsLeader() {
 		return nil
 	}
-	addr := fmt.Sprintf("%s:%d", host, port)
-	// find the server using the host/port
-	// TODO: rethink this
+
 	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
-		if string(server.Address) == addr {
+		if string(server.ID) == nodeID {
 			res := n.Raft.RemoveServer(server.ID, 0, 0)
 			return res.Error()
 		}
 	}
-	n.logger.Infof("did not find peer to remove at %s", addr)
+
+	n.logger.Infof("did not find peer to remove '%s'", nodeID)
 	return nil
 }
 
