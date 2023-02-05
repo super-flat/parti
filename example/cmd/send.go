@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -42,7 +42,7 @@ var sendCMD = &cobra.Command{
 			log.Fatal(err)
 		}
 		defer resp.Body.Close()
-		respBytes, _ := ioutil.ReadAll(resp.Body)
+		respBytes, _ := io.ReadAll(resp.Body)
 		fmt.Println(string(respBytes))
 	},
 }

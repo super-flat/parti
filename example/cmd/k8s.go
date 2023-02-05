@@ -9,7 +9,6 @@ import (
 )
 
 func init() {
-
 	var flagLabels *[]string
 	var namespace *string
 	var portName *string
@@ -18,7 +17,6 @@ func init() {
 		Use:   "k",
 		Short: "test",
 		Run: func(cmd *cobra.Command, args []string) {
-
 			podLabels := make(map[string]string, len(*flagLabels))
 			for _, pair := range *flagLabels {
 				pairValues := strings.Split(pair, ":")
@@ -45,7 +43,6 @@ func init() {
 					log.Printf("member pinged %s\n", change.ID)
 				default:
 					log.Printf("unhandled change %v", change.Change)
-
 				}
 			}
 		},

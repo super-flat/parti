@@ -1,21 +1,21 @@
+# See https://golangci-lint.run/usage/configuration/
 run:
-  issues-exit-code: 1
-  skip-dirs:
-    - partipb
-    - mocks
-    - vendor
-  tests: true
+  issues-exit-code: 1 #Default
+  tests: true #Default
   timeout: 5m
 
 linters:
+  disable-all: true
   enable:
     - misspell
     - goimports
     - revive
     - gofmt
-    - gosec
     - whitespace
-    - golint
+    - gosec
+    - gosimple
+    - gocyclo
+
 
 issues:
   exclude-rules:
@@ -35,5 +35,4 @@ linters-settings:
     locale: US
     ignore-words:
       - cancelled
-  goimports:
-    local-prefixes: github.com/superflat
+      - behaviour

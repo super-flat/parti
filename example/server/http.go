@@ -19,42 +19,43 @@ import (
 // WebServer is an http server that forwards messages to the raft cluster
 type WebServer struct {
 	Parti    *cluster.Cluster
-	HttpPort uint16
+	HTTPPort uint16
 	server   *http.Server
 }
 
 // NewWebServer returns a new WebServer
-func NewWebServer(partiNode *cluster.Cluster, HttpPort uint16) *WebServer {
+func NewWebServer(partiNode *cluster.Cluster, HTTPPort uint16) *WebServer {
 	return &WebServer{
 		Parti:    partiNode,
-		HttpPort: HttpPort,
+		HTTPPort: HTTPPort,
 	}
 }
 
 // Start the webserver in background
-func (w *WebServer) Start() {
+func (wb *WebServer) Start() {
 	// define a router that handles messages
 	mux := http.NewServeMux()
-	mux.HandleFunc("/send", w.handleMessage)
+	mux.HandleFunc("/send", wb.handleMessage)
 	// create a webserver
-	w.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", w.HttpPort),
-		Handler: mux,
+	wb.server = &http.Server{
+		Addr:              fmt.Sprintf(":%d", wb.HTTPPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 60 * time.Second,
 	}
 	// run the server in a thread
 	go func() {
-		if err := w.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := wb.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
-	log.Printf("webserver listening on '%s'", w.server.Addr)
+	log.Printf("webserver listening on '%s'", wb.server.Addr)
 }
 
 // Stop gracefully shuts down this webserver
-func (w *WebServer) Stop(ctx context.Context) {
+func (wb *WebServer) Stop(ctx context.Context) {
 	newCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := w.server.Shutdown(newCtx); err != nil {
+	if err := wb.server.Shutdown(newCtx); err != nil {
 		log.Fatalf("webserver shutdown failed:%+v", err)
 	}
 	log.Print("example webserver shut down properly")
@@ -66,7 +67,7 @@ func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Print("missing partition")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("missing partition"))
+		_, _ = w.Write([]byte("missing partition"))
 		return
 	}
 	// read the message
@@ -81,7 +82,7 @@ func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Print(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -90,7 +91,7 @@ func (wb *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 		EmitUnpopulated: true,
 		Multiline:       true,
 	}
-	fmt.Fprint(w, format.Format(resp))
+	_, _ = fmt.Fprint(w, format.Format(resp))
 }
 
 func parsePartition(value string) (uint32, bool) {

@@ -380,6 +380,7 @@ func (n *Node) GetPeer(peerID string) (*Peer, error) {
 }
 
 // newNodeID returns a random node ID of length `size`
+// nolint:unused
 func newNodeID(size int) string {
 	// TODO, do we need to do this anymore?
 	rand.Seed(time.Now().UnixNano())
@@ -391,6 +392,7 @@ func newNodeID(size int) string {
 }
 
 // Delete a key from the cluster state
+// nolint:unused
 func Delete(n *Node, group string, key string) error {
 	request := &partipb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.RaftApply(request, time.Second)

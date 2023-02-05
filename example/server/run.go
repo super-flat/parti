@@ -43,7 +43,7 @@ func Run() {
 		panic(err)
 	}
 	// run an http server
-	web := NewWebServer(partiNode, uint16(cfg.HttpPort))
+	web := NewWebServer(partiNode, uint16(cfg.HTTPPort))
 	web.Start()
 	// wait for interruption/termination
 	sigs := make(chan os.Signal, 1)
