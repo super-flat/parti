@@ -37,9 +37,10 @@ type Kubernetes struct {
 	isStarted         bool
 	mtx               *sync.Mutex
 	discoCh           chan Event
-	peerCache         map[string]*k8sPeer // peer ID -> peer
+	peerCache         map[string]bool // peer ID -> bool is active
 	shutdownCallbacks []func()
 	k8sClient         *kubernetes.Clientset
+	internalCh        chan Event
 }
 
 var _ Provider = &Kubernetes{}
@@ -50,16 +51,18 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 	for k, v := range podLabels {
 		podLabels[k] = v
 	}
-	return &Kubernetes{
-		logger:    partilog.DefaultLogger, // TODO move to a config
-		namespace: namespace,
-		podLabels: podLabelsCopy,
-		portName:  portName,
-		mtx:       &sync.Mutex{},
-		isStarted: false,
-		peerCache: make(map[string]*k8sPeer),
-		discoCh:   make(chan Event, 10),
+	k := &Kubernetes{
+		logger:     partilog.DefaultLogger, // TODO move to a config
+		namespace:  namespace,
+		podLabels:  podLabelsCopy,
+		portName:   portName,
+		mtx:        &sync.Mutex{},
+		isStarted:  false,
+		peerCache:  make(map[string]bool),
+		discoCh:    make(chan Event, 10),
+		internalCh: make(chan Event, 10),
 	}
+	return k
 }
 
 // GetNodeID returns the pod name set by an environment variable
@@ -95,7 +98,8 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan Event, error) {
 	}
 
 	// kick off loop in goroutine
-	// go k.pollPods(runningContext)
+	go k.processEvents(runningContext)
+	go k.pollPods(runningContext)
 	go k.listenChanges(runningContext)
 
 	// report started and return channel
@@ -119,7 +123,51 @@ func (k *Kubernetes) Stop(ctx context.Context) {
 	}
 }
 
+// processEvents reads the internal event stream and publishes to the public
+// discovery channel
+func (k *Kubernetes) processEvents(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt := <-k.internalCh:
+			k.mtx.Lock()
+			switch evt.Change {
+			case MemberAdded, MemberPinged:
+				isActive, exists := k.peerCache[evt.ID]
+
+				if !exists {
+					// if doesn't exist yet
+					// set to active
+					k.peerCache[evt.ID] = true
+					// emit an added event
+					k.discoCh <- Event{
+						ID:     evt.ID,
+						Host:   evt.Host,
+						Port:   evt.Port,
+						Change: MemberAdded,
+					}
+				} else if isActive {
+					// if it's already active, emit a ping event
+					k.discoCh <- Event{
+						ID:     evt.ID,
+						Host:   evt.Host,
+						Port:   evt.Port,
+						Change: MemberPinged,
+					}
+				}
+
+			case MemberRemoved:
+				k.peerCache[evt.ID] = false
+				k.discoCh <- evt
+			}
+			k.mtx.Unlock()
+		}
+	}
+}
+
 // listenChanges subscribes to pod chagnes
+// TODO: catch the shutdown/terminating much earlier!
 func (k *Kubernetes) listenChanges(ctx context.Context) {
 	k.logger.Debugf("creating a k8s watcher")
 	watchOpts := metav1.ListOptions{
@@ -186,7 +234,7 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 
 			switch event.Type {
 			case watch.Added:
-				k.discoCh <- Event{
+				k.internalCh <- Event{
 					ID:     newPeer.ID,
 					Host:   newPeer.Address,
 					Port:   newPeer.Port,
@@ -194,7 +242,7 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 				}
 
 			case watch.Deleted:
-				k.discoCh <- Event{
+				k.internalCh <- Event{
 					ID:     newPeer.ID,
 					Host:   newPeer.Address,
 					Port:   newPeer.Port,
@@ -204,14 +252,14 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 			case watch.Modified:
 				switch pod.Status.Phase {
 				case v1.PodRunning:
-					k.discoCh <- Event{
+					k.internalCh <- Event{
 						ID:     newPeer.ID,
 						Host:   newPeer.Address,
 						Port:   newPeer.Port,
 						Change: MemberPinged,
 					}
 				case v1.PodSucceeded, v1.PodFailed:
-					k.discoCh <- Event{
+					k.internalCh <- Event{
 						ID:     newPeer.ID,
 						Host:   newPeer.Address,
 						Port:   newPeer.Port,
@@ -237,7 +285,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 		case <-ctx.Done():
 			k.logger.Debug("shutting down pollPods")
 			return
-		default:
+		case <-time.After(time.Second):
 			// select pods that have specific labels
 			pods, err := k.k8sClient.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
@@ -245,7 +293,6 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 			if err != nil {
 				k.logger.Errorf("could not list pods for kubernetes discovery, %v", err)
 			}
-			seenThisLoop := make(map[string]bool)
 			// enumerate pods that match label selector
 			for _, pod := range pods.Items {
 				// only consider running pods
@@ -255,8 +302,6 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 				if k.isSelf(pod.Status.PodIP) {
 					continue
 				}
-				// start recording the pods
-				seenThisLoop[pod.GetName()] = true
 				// enumerate containers searching for the port
 				var newPeer *k8sPeer
 				// search for the named port
@@ -281,58 +326,13 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					continue
 				}
 
-				k.mtx.Lock()
-				_, seenBefore := k.peerCache[newPeer.ID]
-				k.peerCache[newPeer.ID] = newPeer
-				// if it's new, report it to the discovery channel
-				if !seenBefore {
-					k.logger.Infof("found k8s peer %s at %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
-					if k.isStarted {
-						k.discoCh <- Event{
-							ID:     newPeer.ID,
-							Host:   newPeer.Address,
-							Port:   newPeer.Port,
-							Change: MemberAdded,
-						}
-					}
-				} else if seenBefore {
-					k.logger.Debugf("sending heartbeat for peer %s @ %s:%d", newPeer.ID, newPeer.Address, newPeer.Port)
-					if k.isStarted {
-						k.discoCh <- Event{
-							ID:     newPeer.ID,
-							Host:   newPeer.Address,
-							Port:   newPeer.Port,
-							Change: MemberPinged,
-						}
-					}
-				}
-				k.mtx.Unlock()
-			}
-			// loop over known pods and confirm they were in most recent
-			// listing operation above
-			// TODO: this is brittle, we should probably introduce a TTL instead
-			for ix, peer := range k.peerCache {
-				if !peer.IsLive {
-					continue
-				}
-				if _, seen := seenThisLoop[peer.ID]; !seen {
-					k.mtx.Lock()
-					// overwrite the local cache
-					peer.IsLive = false
-					peer.LastEvent = time.Now()
-					k.peerCache[ix] = peer
-					// push to the channel
-					k.discoCh <- Event{
-						ID:     peer.ID,
-						Host:   peer.Address,
-						Port:   peer.Port,
-						Change: MemberRemoved,
-					}
-					k.logger.Infof("removed k8s peer %s at %s:%d", peer.ID, peer.Address, peer.Port)
-					k.mtx.Unlock()
+				k.internalCh <- Event{
+					ID:     newPeer.ID,
+					Host:   newPeer.Address,
+					Port:   newPeer.Port,
+					Change: MemberPinged,
 				}
 			}
-			time.Sleep(time.Second * 5)
 		}
 	}
 }

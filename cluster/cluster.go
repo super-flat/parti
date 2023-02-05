@@ -84,7 +84,7 @@ func (n *Cluster) handleMemberEvents(events <-chan membership.Event) {
 	n.logger.Info("begin listening for member changes")
 	for event := range events {
 		if !n.node.IsLeader() {
-			n.logger.Debugf("skipping event because not leader")
+			// n.logger.Debugf("skipping event because not leader")
 			continue
 		}
 		n.logger.Debugf("received event for addr %s:%d", event.Host, event.Port)
@@ -166,25 +166,30 @@ func (n *Cluster) bootstrap(memberEvents chan membership.Event) {
 	for {
 		select {
 		case m := <-memberEvents:
-			n.logger.Debugf("checking peer %s", m.ID)
-			addr := fmt.Sprintf("%s:%d", m.Host, m.Port)
-			resp, err := n.callPeerBootstrap(addr)
-			if err != nil {
-				n.logger.Errorf("failed to call client %s bootstrap, %v", addr, err)
-			} else {
-				// if peer is in cluster or has a higher ID, wait more time
-				if resp.GetInCluster() {
-					n.logger.Debugf("found another active cluster")
-					t = time.Now()
-				} else if strings.Compare(resp.GetPeerId(), n.node.ID) > 0 {
-					n.logger.Debugf("found another better leader candidate, %v", resp.GetPeerId())
-					t = time.Now()
+			switch m.Change {
+			case membership.MemberAdded, membership.MemberPinged:
+				n.logger.Debugf("checking peer %s", m.ID)
+				addr := fmt.Sprintf("%s:%d", m.Host, m.Port)
+				resp, err := n.callPeerBootstrap(addr)
+				if err != nil {
+					n.logger.Errorf("failed to call client %s bootstrap, %v", addr, err)
 				} else {
-					n.logger.Debugf("this node is a better candidate than %s", m.ID)
+					// if peer is in cluster or has a higher ID, wait more time
+					if resp.GetInCluster() {
+						n.logger.Debugf("found another active cluster")
+						t = time.Now()
+					} else if strings.Compare(resp.GetPeerId(), n.node.ID) > 0 {
+						n.logger.Debugf("found another better leader candidate, %v", resp.GetPeerId())
+						t = time.Now()
+					} else {
+						n.logger.Debugf("this node is a better candidate than %s", m.ID)
+					}
 				}
+			default:
+				n.logger.Debug("skipping membership event %v", m.Change)
 			}
 
-		case <-time.After(time.Second * 5):
+		case <-time.After(time.Second):
 			n.logger.Debugf("no new member events received")
 			// this case advances the loop if we haven't seen a new peer event
 			// in 10 seconds
