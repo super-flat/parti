@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/Jille/raft-grpc-transport v1.4.0
 	github.com/caarlos0/env/v6 v6.10.1
+	github.com/caarlos0/env/v7 v7.0.0
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/raft v1.3.11
 	github.com/joho/godotenv v1.5.0
