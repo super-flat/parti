@@ -1,9 +1,9 @@
 package cluster
 
 import (
-	"github.com/hashicorp/go-hclog"
 	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/serializer"
+	"github.com/super-flat/parti/logging"
 )
 
 // Option is the interface that applies a configuration option.
@@ -29,14 +29,14 @@ func WithSerializer(serializer serializer.Serializer) Option {
 }
 
 // WithLogger sets the logger
-func WithLogger(logger hclog.Logger) Option {
+func WithLogger(logger logging.Logger) Option {
 	return OptionFunc(func(cluster *Cluster) {
 		cluster.logger = logger
 	})
 }
 
 // WithLogLevel sets the log level
-func WithLogLevel(level hclog.Level) Option {
+func WithLogLevel(level logging.Level) Option {
 	return OptionFunc(func(cluster *Cluster) {
 		cluster.logLevel = level
 	})

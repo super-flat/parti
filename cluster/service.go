@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/go-hclog"
+	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 )
 
 type ClusteringService struct {
 	partipb.UnimplementedClusteringServer
 	cluster *Cluster
-	logger  hclog.Logger
+	logger  logging.Logger
 }
 
 // ensure implements complete interface

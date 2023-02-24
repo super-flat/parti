@@ -6,14 +6,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/super-flat/parti/cluster"
 	"github.com/super-flat/parti/cluster/membership"
+	"github.com/super-flat/parti/logging"
 )
 
 func Run() {
 	// define the logger
-	logger := hclog.Default()
+	logger := logging.DefaultLogger
 
 	logger.Info("starting example server")
 	ctx := context.Background()
@@ -40,7 +40,7 @@ func Run() {
 		cluster.WithPartitionCount(numPartitions),
 		cluster.WithMembershipProvider(members),
 		cluster.WithLogger(logger),
-		cluster.WithLogLevel(hclog.Debug),
+		cluster.WithLogLevel(logging.DebugLevel),
 	)
 	// start the node
 	if err := partiNode.Start(ctx); err != nil {

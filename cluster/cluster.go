@@ -14,6 +14,7 @@ import (
 	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/rebalance"
 	"github.com/super-flat/parti/cluster/serializer"
+	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,8 +39,8 @@ type Cluster struct {
 	nodeData           *fsm.ProtoFsm
 	grpcServer         *grpc.Server
 	msgHandler         Handler
-	logger             hclog.Logger
-	logLevel           hclog.Level
+	logger             logging.Logger
+	logLevel           logging.Level
 	Serializer         serializer.Serializer
 }
 
@@ -53,8 +54,8 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, opts .
 		nodeData:       fsm.NewProtoFsm(),
 		grpcServer:     grpc.NewServer(),
 		msgHandler:     msgHandler,
-		logger:         hclog.Default(),
-		logLevel:       hclog.Info,
+		logger:         logging.DefaultLogger,
+		logLevel:       logging.InfoLevel,
 		Serializer:     serializer.NewProtoSerializer(),
 	}
 
@@ -81,6 +82,7 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, opts .
 		int(raftPort),
 		cluster.nodeData,
 		cluster.Serializer,
+		cluster.logLevel,
 		cluster.logger,
 		cluster.grpcServer,
 	)
@@ -319,7 +321,7 @@ func (n *Cluster) leaderRebalance() {
 					// TODO: this means that the shutdown grpc call failed. when a node goes down,
 					// this call will definitely fail. think about if there are other reasons this
 					// might fail, and perhaps have some kind of retry here?
-					n.logger.Warn(fmt.Sprintf("failed to shutdown partition %d, %v", partitionID, err))
+					n.logger.Warningf("failed to shutdown partition %d, %v", partitionID, err)
 					continue
 				} else if !resp.GetSuccess() {
 					continue
@@ -355,10 +357,10 @@ func (n *Cluster) leaderRebalance() {
 				&partipb.StartPartitionRequest{PartitionId: partitionID},
 			)
 			if err != nil {
-				n.logger.Warn(fmt.Sprintf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err))
+				n.logger.Warningf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
 				continue
 			} else if !startupResp.GetSuccess() {
-				n.logger.Warn(fmt.Sprintf("node (%s) failed to start partition (%d)", newPeerID, partitionID))
+				n.logger.Warningf("node (%s) failed to start partition (%d)", newPeerID, partitionID)
 				continue
 			}
 			// unpause the partition on new node
@@ -427,7 +429,7 @@ func (n *Cluster) StartPartition(ctx context.Context, request *partipb.StartPart
 	}
 	// attempt to start the partition using the provided handler
 	if err := n.msgHandler.StartPartition(ctx, partitionID); err != nil {
-		n.logger.Warn(fmt.Sprintf("failed to start partition %d, %v", partitionID, err))
+		n.logger.Warningf("failed to start partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.StartPartitionResponse{Success: false}, nil
 	}
@@ -444,12 +446,12 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 	// if this node is not the owner, we cannot shut down that partition.
 	// TODO: decide if error would be better here
 	if ownerNodeID != n.node.ID {
-		n.logger.Warn(fmt.Sprintf("received partition shutdown for another node (%s), partition=(%d)", ownerNodeID, request.GetPartitionId()))
+		n.logger.Warningf("received partition shutdown for another node (%s), partition=(%d)", ownerNodeID, request.GetPartitionId())
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
 	// attempt to shut down the partition using the provided handler
 	if err := n.msgHandler.ShutdownPartition(ctx, partitionID); err != nil {
-		n.logger.Warn(fmt.Sprintf("failed to shut down partition %d, %v", partitionID, err))
+		n.logger.Warningf("failed to shut down partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
@@ -472,13 +474,13 @@ func (n *Cluster) Send(ctx context.Context, request *partipb.SendRequest) (*part
 		if partition.GetAcceptingMessages() {
 			break
 		}
-		n.logger.Info(fmt.Sprintf("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner()))
+		n.logger.Infof("partition (%d) is paused on node (%s), backing off", partitionID, partition.GetOwner())
 		time.Sleep(time.Second)
 	}
 	ownerNodeID := partition.GetOwner()
 	// if partition owned by this node, answer locally
 	if ownerNodeID == n.node.ID {
-		n.logger.Info(fmt.Sprintf("received local send, partition=%d, id=%s", partitionID, request.GetMessageId()))
+		n.logger.Infof("received local send, partition=%d, id=%s", partitionID, request.GetMessageId())
 		handlerResp, err := n.msgHandler.Handle(ctx, partitionID, request.GetMessage())
 		if err != nil {
 			return nil, err

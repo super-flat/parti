@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/super-flat/parti/cluster"
+	"github.com/super-flat/parti/logging"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ExampleHandler struct {
-	logger hclog.Logger
+	logger logging.Logger
 }
 
 var _ cluster.Handler = &ExampleHandler{}

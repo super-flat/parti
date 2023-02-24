@@ -10,11 +10,11 @@ import (
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
 	"github.com/pkg/errors"
 	"github.com/super-flat/parti/cluster/serializer"
+	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,22 +34,26 @@ type node struct {
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	stopped          *uint32
-	logger           hclog.Logger
-	logLevel         hclog.Level
+	logger           logging.Logger
+	logLevel         logging.Level
 	mtx              *sync.Mutex
 	isStarted        bool
 	isBootstrapped   bool
 }
 
 // newNode returns an raft node
-func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger hclog.Logger, grpcServer *grpc.Server) (*node, error) {
+func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel logging.Level, logger logging.Logger, grpcServer *grpc.Server) (*node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
+
+	// create the raft logger
+	raftLogger := newLog(logLevel, logger)
 
 	raftConf := hraft.DefaultConfig()
 	raftConf.LocalID = hraft.ServerID(nodeID)
 	raftLogCacheSize := 512
-	raftConf.LogLevel = "Info"
+	raftConf.LogLevel = raftLogger.GetLevel().String()
+	raftConf.Logger = raftLogger
 
 	// create a stable store
 	// TODO: see why hashicorp advises against use in prod, maybe
@@ -64,7 +68,7 @@ func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	}
 
 	// snapshot store that discards everything
-	// TODO: see if there's any reason not to use this inmem snapshot store
+	// TODO: see if there's any reason not to use this in-mem snapshot store
 	var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
 	// var snapshotStore hraft.SnapshotStore = hraft.NewDiscardSnapshotStore()
 
@@ -103,7 +107,7 @@ func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 
 // Start starts the node
 func (n *node) Start(ctx context.Context) error {
-	n.logger.Info("Starting Raft Node", "ID", hclog.Fmt("%%s", n.ID))
+	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -135,7 +139,7 @@ func (n *node) Start(ctx context.Context) error {
 		}
 	}()
 
-	n.logger.Info("Node started on port", "port", hclog.Fmt("%d\n", n.RaftPort))
+	n.logger.Infof("Node started on port %d\n", n.RaftPort)
 
 	n.isStarted = true
 	go n.waitForBootstrap()
@@ -163,7 +167,7 @@ func (n *node) waitForBootstrap() {
 		}
 
 		// add some debug log here
-		n.logger.Debug("Waiting for Peers", "current state", hclog.Fmt("%s", n.Raft.State().String()))
+		n.logger.Debugf("waiting for raft peers, current state %s", n.Raft.State().String())
 		time.Sleep(time.Second)
 	}
 }
@@ -251,7 +255,7 @@ func (n *node) AddPeer(nodeID string, host string, port uint16) error {
 	// ensure not duplicate peer
 	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
 		if string(server.ID) == nodeID {
-			n.logger.Debug("Skipping duplicate peer", "Node", hclog.Fmt("%s", nodeID))
+			n.logger.Debugf("skipping duplicate peer add %s", nodeID)
 			return nil
 		}
 	}
@@ -287,7 +291,7 @@ func (n *node) RemovePeer(nodeID string) error {
 		}
 	}
 
-	n.logger.Info("did not find peer to remove", "Peer", hclog.Fmt("%s", nodeID))
+	n.logger.Infof("did not find peer to remove Peer=%s", nodeID)
 	return nil
 }
 
@@ -336,7 +340,7 @@ func (n *node) HasLeader() bool {
 func (n *node) GetPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.RaftPort)
-	n.logger.Debug("returning peer for", "self", hclog.Fmt("%s @ %s", n.ID, raftAddr))
+	n.logger.Debugf("returning peer for self %s @ %s", n.ID, raftAddr)
 	return NewPeer(n.ID, raftAddr)
 }
 
@@ -379,7 +383,7 @@ func (n *node) GetPeer(peerID string) (*Peer, error) {
 	if raftAddr == "" {
 		return nil, fmt.Errorf("could not find raft peer (%s)", peerID)
 	}
-	n.logger.Debug("retrieved", "peer", hclog.Fmt("%s @ %s", peerID, raftAddr))
+	n.logger.Debugf("retrieved peer %s @ %s", peerID, raftAddr)
 	return NewPeer(peerID, raftAddr), nil
 }
 

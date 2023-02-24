@@ -3,14 +3,13 @@ package membership
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/pkg/errors"
+	"github.com/super-flat/parti/logging"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -30,7 +29,7 @@ type k8sPeer struct {
 // Kubernetes implements the membership.Provider interface via direct
 // integration with the kubernetes API
 type Kubernetes struct {
-	logger            hclog.Logger
+	logger            logging.Logger
 	namespace         string
 	podLabels         map[string]string
 	portName          string
@@ -45,7 +44,7 @@ type Kubernetes struct {
 
 var _ Provider = &Kubernetes{}
 
-func NewKubernetes(namespace string, podLabels map[string]string, portName string, logger hclog.Logger) *Kubernetes {
+func NewKubernetes(namespace string, podLabels map[string]string, portName string, logger logging.Logger) *Kubernetes {
 	// copy pod labels into new map
 	podLabelsCopy := make(map[string]string, len(podLabels))
 	for k, v := range podLabels {
@@ -350,7 +349,7 @@ func (k *Kubernetes) isSelf(address string) bool {
 	for _, i := range ifaces {
 		addrs, err := i.Addrs()
 		if err != nil {
-			log.Fatalf("failed to read addr, %v", err)
+			k.logger.Fatalf("failed to read addr, %v", err)
 		} else {
 			// handle err
 			for _, interfaceAddress := range addrs {

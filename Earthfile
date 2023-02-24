@@ -61,6 +61,8 @@ code:
 
     COPY --dir +protogen/pb ./
     COPY --dir cluster ./
+    COPY --dir logging ./
+
 
     SAVE ARTIFACT /app /files
 
