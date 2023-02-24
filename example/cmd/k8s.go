@@ -4,6 +4,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/hashicorp/go-hclog"
+
 	"github.com/spf13/cobra"
 	"github.com/super-flat/parti/cluster/membership"
 )
@@ -28,7 +30,7 @@ func init() {
 				podLabels[labelKey] = labelValue
 			}
 
-			members := membership.NewKubernetes(*namespace, podLabels, *portName)
+			members := membership.NewKubernetes(*namespace, podLabels, *portName, hclog.Default())
 			outChan, err := members.Listen(cmd.Context())
 			if err != nil {
 				log.Fatal(err)

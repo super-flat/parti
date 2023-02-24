@@ -2,21 +2,21 @@ package membership
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
+	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
-	partilog "github.com/super-flat/parti/log"
 )
 
 type k8sPeer struct {
@@ -30,7 +30,7 @@ type k8sPeer struct {
 // Kubernetes implements the membership.Provider interface via direct
 // integration with the kubernetes API
 type Kubernetes struct {
-	logger            partilog.Logger
+	logger            hclog.Logger
 	namespace         string
 	podLabels         map[string]string
 	portName          string
@@ -45,14 +45,14 @@ type Kubernetes struct {
 
 var _ Provider = &Kubernetes{}
 
-func NewKubernetes(namespace string, podLabels map[string]string, portName string) *Kubernetes {
+func NewKubernetes(namespace string, podLabels map[string]string, portName string, logger hclog.Logger) *Kubernetes {
 	// copy pod labels into new map
 	podLabelsCopy := make(map[string]string, len(podLabels))
 	for k, v := range podLabels {
 		podLabels[k] = v
 	}
 	k := &Kubernetes{
-		logger:     partilog.DefaultLogger, // TODO move to a config
+		logger:     logger,
 		namespace:  namespace,
 		podLabels:  podLabelsCopy,
 		portName:   portName,
@@ -166,10 +166,10 @@ func (k *Kubernetes) processEvents(ctx context.Context) {
 	}
 }
 
-// listenChanges subscribes to pod chagnes
+// listenChanges subscribes to pod changes
 // TODO: catch the shutdown/terminating much earlier!
 func (k *Kubernetes) listenChanges(ctx context.Context) {
-	k.logger.Debugf("creating a k8s watcher")
+	k.logger.Debug("creating a k8s watcher")
 	watchOpts := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
 	}
@@ -178,7 +178,7 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 	for {
 		watcher, err = k.k8sClient.CoreV1().Pods(k.namespace).Watch(ctx, watchOpts)
 		if err != nil {
-			k.logger.Error(err)
+			k.logger.Error(err.Error())
 			time.Sleep(time.Second)
 		} else {
 			break
@@ -197,10 +197,10 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 				k.logger.Error("unexpected type")
 				continue
 			}
-			k.logger.Debugf("received watch event %s for pod %s", event.Type, pod.Name)
+			k.logger.Debug(fmt.Sprintf("received watch event %s for pod %s", event.Type, pod.Name))
 
 			if pod.Status.PodIP == "" {
-				k.logger.Debugf("pod %s does not have an IP yet", pod.Name)
+				k.logger.Debug(fmt.Sprintf("pod %s does not have an IP yet", pod.Name))
 				continue
 			}
 
@@ -228,7 +228,7 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 			}
 
 			if newPeer == nil {
-				k.logger.Debugf("pod %s matched selector but did not have port named %s", pod.Name, k.portName)
+				k.logger.Debug(fmt.Sprintf("pod %s matched selector but did not have port named %s", pod.Name, k.portName))
 				continue
 			}
 
@@ -271,7 +271,7 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 				}
 
 			default:
-				k.logger.Debugf("watcher skipping event type %s", event.Type)
+				k.logger.Debug(fmt.Sprintf("watcher skipping event type %s", event.Type))
 			}
 		}
 	}
@@ -291,7 +291,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 				LabelSelector: labels.SelectorFromSet(k.podLabels).String(),
 			})
 			if err != nil {
-				k.logger.Errorf("could not list pods for kubernetes discovery, %v", err)
+				k.logger.Error(errors.Wrap(err, "could not list pods for kubernetes discovery").Error())
 			}
 			// enumerate pods that match label selector
 			for _, pod := range pods.Items {
@@ -322,7 +322,7 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 					}
 				}
 				if newPeer == nil {
-					k.logger.Debugf("pod %s matched selector but did not have port named %s", pod.Name, k.portName)
+					k.logger.Debug(fmt.Sprintf("pod %s matched selector but did not have port named %s", pod.Name, k.portName))
 					continue
 				}
 
@@ -344,7 +344,7 @@ var _ Provider = &Kubernetes{}
 func (k *Kubernetes) isSelf(address string) bool {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		k.logger.Errorf("failed to get addresses, %v", err)
+		k.logger.Error(errors.Wrap(err, "failed to get addresses").Error())
 		return false
 	}
 	for _, i := range ifaces {

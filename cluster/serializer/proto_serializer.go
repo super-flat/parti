@@ -7,8 +7,12 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+// ProtoSerializer is the default Serializer used in Parti
 type ProtoSerializer struct{}
 
+var _ Serializer = &ProtoSerializer{}
+
+// NewProtoSerializer creates an instance of ProtoSerializer
 func NewProtoSerializer() *ProtoSerializer {
 	return &ProtoSerializer{}
 }

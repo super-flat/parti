@@ -6,8 +6,9 @@ import (
 	"log"
 	"sync"
 
+	"github.com/super-flat/parti/cluster/serializer"
+
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"

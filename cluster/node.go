@@ -1,8 +1,7 @@
-package raft
+package cluster
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -11,10 +10,11 @@ import (
 	"time"
 
 	transport "github.com/Jille/raft-grpc-transport"
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/raft/serializer"
-	"github.com/super-flat/parti/log"
+	"github.com/pkg/errors"
+	"github.com/super-flat/parti/cluster/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,7 +24,8 @@ import (
 
 const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
 
-type Node struct {
+// node encapsulate information about a cluster node
+type node struct {
 	ID               string
 	RaftPort         int
 	address          string
@@ -33,14 +34,15 @@ type Node struct {
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	stopped          *uint32
-	logger           log.Logger
+	logger           hclog.Logger
+	logLevel         hclog.Level
 	mtx              *sync.Mutex
 	isStarted        bool
 	isBootstrapped   bool
 }
 
-// NewNode returns an raft node
-func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
+// newNode returns an raft node
+func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger hclog.Logger, grpcServer *grpc.Server) (*node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 
@@ -84,7 +86,7 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	// initial stopped flag
 	var stopped uint32
 
-	return &Node{
+	return &node{
 		ID:               nodeID,
 		RaftPort:         raftPort,
 		address:          addr,
@@ -99,14 +101,9 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	}, nil
 }
 
-// WithLogger sets custom log
-func (n *Node) WithLogger(logger log.Logger) {
-	n.logger = logger
-}
-
-// Start starts the Node
-func (n *Node) Start(ctx context.Context) error {
-	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
+// Start starts the node
+func (n *node) Start(ctx context.Context) error {
+	n.logger.Info("Starting Raft Node", "ID", hclog.Fmt("%%s", n.ID))
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -123,17 +120,22 @@ func (n *Node) Start(ctx context.Context) error {
 
 	// set up the tpc listener
 	listener, err := net.Listen("tcp", n.address)
+	// handle the error
 	if err != nil {
-		n.logger.Fatal(err)
+		// enrich the error message
+		enriched := errors.Wrapf(err, "failed to listen on address=%s", n.address)
+		n.logger.Error(enriched.Error())
+		return enriched
 	}
 	// serve grpc
 	go func() {
 		if err := n.GrpcServer.Serve(listener); err != nil {
-			n.logger.Fatal(err)
+			// here we panic because it is fundamental that the server start listening
+			panic(err)
 		}
 	}()
 
-	n.logger.Infof("Node started on port %d\n", n.RaftPort)
+	n.logger.Info("Node started on port", "port", hclog.Fmt("%d\n", n.RaftPort))
 
 	n.isStarted = true
 	go n.waitForBootstrap()
@@ -141,7 +143,7 @@ func (n *Node) Start(ctx context.Context) error {
 	return nil
 }
 
-func (n *Node) waitForBootstrap() {
+func (n *node) waitForBootstrap() {
 	for {
 		if !n.isStarted {
 			return
@@ -149,7 +151,7 @@ func (n *Node) waitForBootstrap() {
 		numPeers := 0
 		cfg := n.Raft.GetConfiguration()
 		if err := cfg.Error(); err != nil {
-			n.logger.Errorf("couldn't read config, %v", err)
+			n.logger.Error(errors.Wrap(err, "couldn't read config").Error())
 		} else {
 			numPeers = len(cfg.Configuration().Servers)
 		}
@@ -159,16 +161,18 @@ func (n *Node) waitForBootstrap() {
 			n.mtx.Unlock()
 			return
 		}
-		n.logger.Debugf("waiting for raft peers, current state %s", n.Raft.State().String())
+
+		// add some debug log here
+		n.logger.Debug("Waiting for Peers", "current state", hclog.Fmt("%s", n.Raft.State().String()))
 		time.Sleep(time.Second)
 	}
 }
 
-func (n *Node) IsBootstrapped() bool {
+func (n *node) IsBootstrapped() bool {
 	return n.isBootstrapped
 }
 
-func (n *Node) Bootstrap() error {
+func (n *node) Bootstrap() error {
 	podIP := os.Getenv("POD_IP")
 	if podIP == "" {
 		return errors.New("missing POD_IP")
@@ -193,7 +197,7 @@ func (n *Node) Bootstrap() error {
 }
 
 // Stop stops the node and notifies on stopped channel returned in Start
-func (n *Node) Stop() {
+func (n *node) Stop() {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
@@ -203,7 +207,7 @@ func (n *Node) Stop() {
 		// }
 		// shut down raft
 		if err := n.Raft.Shutdown().Error(); err != nil {
-			n.logger.Infof("Failed to shutdown Raft: %q\n", err.Error())
+			n.logger.Error(errors.Wrapf(err, "failed to shutdown raft").Error())
 		}
 		// shut down gRPC
 		n.logger.Info("Raft stopped")
@@ -212,7 +216,7 @@ func (n *Node) Stop() {
 	}
 }
 
-func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
+func (n *node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
 	var opt grpc.DialOption = grpc.EmptyDialOption{}
 	ctx := context.Background()
 	conn, err := grpc.DialContext(ctx,
@@ -233,7 +237,7 @@ func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 	return response, nil
 }
 
-func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
+func (n *node) AddPeer(nodeID string, host string, port uint16) error {
 	if !n.IsLeader() {
 		return nil
 	}
@@ -247,7 +251,7 @@ func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	// ensure not duplicate peer
 	for _, server := range n.Raft.GetConfiguration().Configuration().Servers {
 		if string(server.ID) == nodeID {
-			n.logger.Debugf("skipping duplicate peer add %s", nodeID)
+			n.logger.Debug("Skipping duplicate peer", "Node", hclog.Fmt("%s", nodeID))
 			return nil
 		}
 	}
@@ -255,7 +259,7 @@ func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	// contact remote peer
 	detailsResp, err := n.getPeerDetails(peerAddr)
 	if err != nil {
-		n.logger.Error(err)
+		n.logger.Error(err.Error())
 		return err
 	}
 	// confirm node ID match
@@ -271,7 +275,7 @@ func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	return res.Error()
 }
 
-func (n *Node) RemovePeer(nodeID string) error {
+func (n *node) RemovePeer(nodeID string) error {
 	if !n.IsLeader() {
 		return nil
 	}
@@ -283,13 +287,13 @@ func (n *Node) RemovePeer(nodeID string) error {
 		}
 	}
 
-	n.logger.Infof("did not find peer to remove '%s'", nodeID)
+	n.logger.Info("did not find peer to remove", "Peer", hclog.Fmt("%s", nodeID))
 	return nil
 }
 
 // RaftApply is used to apply any new logs to the raft cluster
-// this method does automatic forwarding to Leader Node
-func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
+// this method does automatic forwarding to Leader node
+func (n *node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
 	// serialize the payload for use in raft
 	payload, err := n.Serializer.Serialize(request)
 	if err != nil {
@@ -298,7 +302,7 @@ func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{
 	return n.raftApplyLocalLeader(payload, timeout)
 }
 
-func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
+func (n *node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
 	if !n.IsLeader() {
 		return nil, errors.New("must be leader")
 	}
@@ -315,7 +319,7 @@ func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (inte
 }
 
 // IsLeader returns true if the current node is the cluster leader
-func (n *Node) IsLeader() bool {
+func (n *node) IsLeader() bool {
 	// _, id := n.Raft.LeaderWithID()
 	// return n.ID == string(id)
 	return n.Raft.VerifyLeader().Error() == nil
@@ -323,21 +327,21 @@ func (n *Node) IsLeader() bool {
 
 // HasLeader returns true if the current node is aware of a cluster leader
 // including itself
-func (n *Node) HasLeader() bool {
+func (n *node) HasLeader() bool {
 	leaderAddr, _ := n.Raft.LeaderWithID()
 	return string(leaderAddr) != ""
 }
 
 // GetPeerSelf returns a Peer for the current node
-func (n *Node) GetPeerSelf() *Peer {
+func (n *node) GetPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.RaftPort)
-	n.logger.Debugf("returning peer for self %s @ %s", n.ID, raftAddr)
+	n.logger.Debug("returning peer for", "self", hclog.Fmt("%s @ %s", n.ID, raftAddr))
 	return NewPeer(n.ID, raftAddr)
 }
 
 // GetPeers returns all nodes in raft cluster (including self)
-func (n *Node) GetPeers() []*Peer {
+func (n *node) GetPeers() []*Peer {
 	peers := make(map[string]*Peer, 3)
 
 	if cfg := n.Raft.GetConfiguration(); cfg.Error() == nil {
@@ -357,7 +361,7 @@ func (n *Node) GetPeers() []*Peer {
 }
 
 // GetPeer returns a specific peer given an ID
-func (n *Node) GetPeer(peerID string) (*Peer, error) {
+func (n *node) GetPeer(peerID string) (*Peer, error) {
 	if peerID == n.ID {
 		return n.GetPeerSelf(), nil
 	}
@@ -375,7 +379,7 @@ func (n *Node) GetPeer(peerID string) (*Peer, error) {
 	if raftAddr == "" {
 		return nil, fmt.Errorf("could not find raft peer (%s)", peerID)
 	}
-	n.logger.Debugf("retrieved peer %s @ %s", peerID, raftAddr)
+	n.logger.Debug("retrieved", "peer", hclog.Fmt("%s @ %s", peerID, raftAddr))
 	return NewPeer(peerID, raftAddr), nil
 }
 
@@ -393,14 +397,14 @@ func newNodeID(size int) string {
 
 // Delete a key from the cluster state
 // nolint:unused
-func Delete(n *Node, group string, key string) error {
+func Delete(n *node, group string, key string) error {
 	request := &partipb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.RaftApply(request, time.Second)
 	return err
 }
 
 // Put a key and value in cluster state
-func Put(n *Node, group string, key string, value proto.Message) error {
+func Put(n *node, group string, key string, value proto.Message) error {
 	anyVal, err := anypb.New(value)
 	if err != nil {
 		return err
@@ -411,7 +415,7 @@ func Put(n *Node, group string, key string, value proto.Message) error {
 }
 
 // Get the value for a key in cluster state
-func Get[T any](n *Node, group, key string) (T, error) {
+func Get[T any](n *node, group, key string) (T, error) {
 	request := &partipb.FsmGetRequest{Group: group, Key: key}
 	result, err := n.RaftApply(request, time.Second)
 	var output T
