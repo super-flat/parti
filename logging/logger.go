@@ -3,223 +3,202 @@ package logging
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
+
+	"github.com/rs/zerolog"
 )
 
-var DefaultLogger = newLogger("PARTI", os.Stderr, io.Discard)
+// DefaultLogger represents the default logger to use
+// This logger wraps zerolog under the hood
+var DefaultLogger = newLogger(os.Stderr)
 
 // Logger represents an active logging object that generates lines of
 // output to an io.Writer.
 type Logger interface {
-	// Info logs to INFO log. Arguments are handled in the manner of fmt.Println.
-	Info(...interface{})
-	// Infof logs to INFO log. Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Infof(string, ...interface{})
-	// Warning logs to the WARNING and INFO logs. Arguments are handled in the manner of fmt.Println.
-	Warning(...interface{})
-	// Warningf logs to the WARNING and INFO logs. Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Warningf(string, ...interface{})
-	// Error logs to the ERROR, WARNING, and INFO logs. Arguments are handled in the manner of fmt.Print.
-	Error(...interface{})
-	// Errorf logs to the ERROR, WARNING, and INFO logs. Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Errorf(string, ...interface{})
-	// Fatal logs to the FATAL, ERROR, WARNING, and INFO logs followed by a call to os.Exit(1).
-	// Arguments are handled in the manner of fmt.Println.
-	Fatal(...interface{})
-	// Fatalf logs to the FATAL, ERROR, WARNING, and INFO logs followed by a call to os.Exit(1).
-	// Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Fatalf(string, ...interface{})
-	// Panic logs to the PANIC, FATAL, ERROR, WARNING, and INFO logs followed by a call to panic().
-	// Arguments are handled in the manner of fmt.Println.
-	Panic(...interface{})
-	// Panicf logs to the PANIC, ERROR, WARNING, and INFO logs followed by a call to panic().
-	// Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Panicf(string, ...interface{})
-	// Debug logs to DEBUG log. Arguments are handled in the manner of fmt.Println.
-	Debug(...interface{})
-	// Debugf logs to DEBUG log. Arguments are handled in the manner of fmt.Printf.
-	// A newline is appended if the last character of format is not
-	// already a newline.
-	Debugf(string, ...interface{})
-	// Trace logs to TRACE log
-	Trace(...interface{})
-	Tracef(string, ...interface{})
+	// Info starts a new message with info level.
+	Info(...any)
+	// Infof starts a new message with info level.
+	Infof(string, ...any)
+	// Warn starts a new message with warn level.
+	Warn(...any)
+	// Warnf starts a new message with warn level.
+	Warnf(string, ...any)
+	// Error starts a new message with error level.
+	Error(...any)
+	// Errorf starts a new message with error level.
+	Errorf(string, ...any)
+	// Fatal starts a new message with fatal level. The os.Exit(1) function
+	// is called which terminates the program immediately.
+	Fatal(...any)
+	// Fatalf starts a new message with fatal level. The os.Exit(1) function
+	// is called which terminates the program immediately.
+	Fatalf(string, ...any)
+	// Panic starts a new message with panic level. The panic() function
+	// is called which stops the ordinary flow of a goroutine.
+	Panic(...any)
+	// Panicf starts a new message with panic level. The panic() function
+	// is called which stops the ordinary flow of a goroutine.
+	Panicf(string, ...any)
+	// Debug starts a new message with debug level.
+	Debug(...any)
+	// Debugf starts a new message with debug level.
+	Debugf(string, ...any)
+	// Trace starts a new message with trace level
+	Trace(...any)
+	// Tracef starts a new message with trace level
+	Tracef(string, ...any)
 }
 
-// Info logs to DEBUG, WARNING and INFO log. Arguments are handled in the manner of fmt.Println.
+// Info starts a new message with info level.
 func Info(v ...any) {
 	DefaultLogger.Info(v...)
 }
 
-// Infof logs to DEBUG, WARNING and INFO log. Arguments are handled in the manner of fmt.Printf.
-// A newline is appended if the last character of format is not
-// already a newline.
+// Infof starts a new message with info level.
 func Infof(format string, v ...any) {
 	DefaultLogger.Infof(format, v...)
 }
 
-// Warning logs to the WARNING and INFO logs. Arguments are handled in the manner of fmt.Println.
-func Warning(v ...any) {
-	DefaultLogger.Warning(v...)
+// Warn starts a new message with warn level.
+func Warn(v ...any) {
+	DefaultLogger.Warn(v...)
 }
 
-// Warningf logs to the WARNING and INFO logs. Arguments are handled in the manner of fmt.Printf.
-// A newline is appended if the last character of format is not
-// already a newline.
-func Warningf(format string, v ...any) {
-	DefaultLogger.Warningf(format, v...)
+// Warnf starts a new message with warn level.
+func Warnf(format string, v ...any) {
+	DefaultLogger.Warnf(format, v...)
 }
 
-// Error logs to the ERROR, WARNING, DEBUG and INFO logs. Arguments are handled in the manner of fmt.Print.
+// Error starts a new message with error level.
 func Error(v ...any) {
 	DefaultLogger.Error(v...)
 }
 
-// Errorf logs to the ERROR, WARNING, DEBUG and INFO logs. Arguments are handled in the manner of fmt.Printf.
-// A newline is appended if the last character of format is not
-// already a newline.
+// Errorf starts a new message with error level.
 func Errorf(format string, v ...any) {
 	DefaultLogger.Errorf(format, v...)
 }
 
-// Fatal logs to the FATAL, ERROR, WARNING, DEBUG and INFO logs followed by a call to os.Exit(1).
-// Arguments are handled in the manner of fmt.Println.
+// Fatal starts a new message with fatal level. The os.Exit(1) function
+// is called which terminates the program immediately.
 func Fatal(v ...any) {
 	DefaultLogger.Fatal(v...)
 }
 
-// Fatalf logs to the FATAL, ERROR, WARNING, DEBUG and INFO logs followed by a call to os.Exit(1).
-// Arguments are handled in the manner of fmt.Printf.
-// A newline is appended if the last character of format is not
-// already a newline.
+// Fatalf starts a new message with fatal level. The os.Exit(1) function
+// is called which terminates the program immediately.
 func Fatalf(format string, v ...any) {
 	DefaultLogger.Fatalf(format, v...)
 }
 
-// Panic logs to the PANIC, FATAL, ERROR, WARNING, DEBUG and INFO logs followed by a call to panic().
-// Arguments are handled in the manner of fmt.Println.
+// Panic starts a new message with panic level. The panic() function
+// is called which stops the ordinary flow of a goroutine.
 func Panic(v ...any) {
 	DefaultLogger.Panic(v...)
 }
 
-// Panicf logs to the PANIC, ERROR, WARNING, DEBUG and INFO logs followed by a call to panic().
-// Arguments are handled in the manner of fmt.Printf.
-// A newline is appended if the last character of format is not
-// already a newline.
+// Panicf starts a new message with panic level. The panic() function
+// is called which stops the ordinary flow of a goroutine.
 func Panicf(format string, v ...any) {
 	DefaultLogger.Panicf(format, v...)
 }
 
-// logger is the default logger used by raft.
+// Debug starts a new message with debug level
+func Debug(v ...any) {
+	DefaultLogger.Debug(v...)
+}
+
+// Debugf starts a new message with debug level
+func Debugf(format string, v ...any) {
+	DefaultLogger.Debugf(format, v...)
+}
+
+// logger is the default logger
+// it wraps the standard golang logging library
 type logger struct {
-	ll []*log.Logger
+	underlying zerolog.Logger
 }
 
-func newLogger(prefix string, writers ...io.Writer) *logger {
-	if len(writers) == 0 {
-		writers = []io.Writer{os.Stderr}
-	}
+var _ Logger = &logger{}
 
-	if len(writers) < numLogLevels {
-		last := writers[len(writers)-1]
-		for i := len(writers); i < numLogLevels; i++ {
-			writers = append(writers, last)
-		}
-	}
-
-	loggers := make([]*log.Logger, numLogLevels)
-	for i := range writers {
-		mw := make([]io.Writer, i+1)
-		for j := 0; j <= i; j++ {
-			mw[j] = writers[j]
-		}
-
-		w := io.MultiWriter(mw...)
-		loggers[i] = log.New(w, prefix, log.LstdFlags)
-	}
-
-	return &logger{
-		ll: loggers,
-	}
+// newLogger creates an instance of logger
+func newLogger(w io.Writer) *logger {
+	// create an instance of zerolog logger
+	zlogger := zerolog.New(w).With().Timestamp().Logger()
+	// create the instance of logger and returns it
+	return &logger{underlying: zlogger}
 }
 
+// Debug starts a message with debug level
 func (l *logger) Debug(v ...any) {
-	l.output(DebugLevel, fmt.Sprint(v...))
+	l.underlying.Debug().Msg(fmt.Sprint(v...))
 }
 
+// Debugf starts a message with debug level
 func (l *logger) Debugf(format string, v ...any) {
-	l.output(InfoLevel, fmt.Sprintf(format, v...))
+	l.underlying.Debug().Msgf(format, v...)
 }
 
+// Panic starts a new message with panic level. The panic() function
+// is called which stops the ordinary flow of a goroutine.
 func (l *logger) Panic(v ...any) {
-	s := fmt.Sprint(v...)
-	l.output(PanicLevel, s)
-	panic(s)
+	l.underlying.Panic().Msg(fmt.Sprint(v...))
 }
 
+// Panicf starts a new message with panic level. The panic() function
+// is called which stops the ordinary flow of a goroutine.
 func (l *logger) Panicf(format string, v ...any) {
-	s := fmt.Sprintf(format, v...)
-	l.output(PanicLevel, s)
-	panic(s)
+	l.underlying.Panic().Msgf(format, v...)
 }
 
+// Fatal starts a new message with fatal level. The os.Exit(1) function
+// is called which terminates the program immediately.
 func (l *logger) Fatal(v ...any) {
-	l.output(FatalLevel, fmt.Sprint(v...))
-	os.Exit(1)
+	l.underlying.Fatal().Msg(fmt.Sprint(v...))
 }
 
+// Fatalf starts a new message with fatal level. The os.Exit(1) function
+// is called which terminates the program immediately.
 func (l *logger) Fatalf(format string, v ...any) {
-	l.output(FatalLevel, fmt.Sprintf(format, v...))
-	os.Exit(1)
+	l.underlying.Fatal().Msgf(format, v...)
 }
 
+// Error starts a new message with error level.
 func (l *logger) Error(v ...any) {
-	l.output(ErrorLevel, fmt.Sprint(v...))
+	l.underlying.Error().Msg(fmt.Sprint(v...))
 }
 
+// Errorf starts a new message with error level.
 func (l *logger) Errorf(format string, v ...any) {
-	l.output(ErrorLevel, fmt.Sprintf(format, v...))
+	l.underlying.Error().Msgf(format, v...)
 }
 
-func (l *logger) Warning(v ...any) {
-	l.output(WarningLevel, fmt.Sprint(v...))
+// Warn starts a new message with warn level
+func (l *logger) Warn(v ...any) {
+	l.underlying.Warn().Msg(fmt.Sprint(v...))
 }
 
-func (l *logger) Warningf(format string, v ...any) {
-	l.output(WarningLevel, fmt.Sprintf(format, v...))
+// Warnf starts a new message with warn level
+func (l *logger) Warnf(format string, v ...any) {
+	l.underlying.Warn().Msgf(format, v...)
 }
 
+// Info starts a message with info level
 func (l *logger) Info(v ...any) {
-	l.output(InfoLevel, fmt.Sprint(v...))
+	l.underlying.Info().Msg(fmt.Sprint(v...))
 }
 
+// Infof starts a message with info level
 func (l *logger) Infof(format string, v ...any) {
-	l.output(InfoLevel, fmt.Sprintf(format, v...))
+	l.underlying.Info().Msgf(format, v...)
 }
 
-func (l *logger) Trace(v ...interface{}) {
-	l.output(TraceLevel, fmt.Sprint(v...))
+// Trace starts a new message with trace level
+func (l *logger) Trace(v ...any) {
+	l.underlying.Trace().Msg(fmt.Sprint(v...))
 }
 
-func (l *logger) Tracef(format string, v ...interface{}) {
-	l.output(TraceLevel, fmt.Sprintf(format, v...))
-}
-
-func (l *logger) output(level Level, s string) {
-	sevStr := levelName[level]
-	err := l.ll[level].Output(2, fmt.Sprintf("%v: %v", sevStr, s))
-	if err != nil {
-		panic(err)
-	}
+// Tracef starts a new message with trace level
+func (l *logger) Tracef(format string, v ...any) {
+	l.underlying.Trace().Msgf(format, v...)
 }

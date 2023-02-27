@@ -321,7 +321,7 @@ func (n *Cluster) leaderRebalance() {
 					// TODO: this means that the shutdown grpc call failed. when a node goes down,
 					// this call will definitely fail. think about if there are other reasons this
 					// might fail, and perhaps have some kind of retry here?
-					n.logger.Warningf("failed to shutdown partition %d, %v", partitionID, err)
+					n.logger.Warnf("failed to shutdown partition %d, %v", partitionID, err)
 					continue
 				} else if !resp.GetSuccess() {
 					continue
@@ -357,10 +357,10 @@ func (n *Cluster) leaderRebalance() {
 				&partipb.StartPartitionRequest{PartitionId: partitionID},
 			)
 			if err != nil {
-				n.logger.Warningf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
+				n.logger.Warnf("node (%s) failed to start partition (%d), %v", newPeerID, partitionID, err)
 				continue
 			} else if !startupResp.GetSuccess() {
-				n.logger.Warningf("node (%s) failed to start partition (%d)", newPeerID, partitionID)
+				n.logger.Warnf("node (%s) failed to start partition (%d)", newPeerID, partitionID)
 				continue
 			}
 			// unpause the partition on new node
@@ -429,7 +429,7 @@ func (n *Cluster) StartPartition(ctx context.Context, request *partipb.StartPart
 	}
 	// attempt to start the partition using the provided handler
 	if err := n.msgHandler.StartPartition(ctx, partitionID); err != nil {
-		n.logger.Warningf("failed to start partition %d, %v", partitionID, err)
+		n.logger.Warnf("failed to start partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.StartPartitionResponse{Success: false}, nil
 	}
@@ -446,12 +446,12 @@ func (n *Cluster) ShutdownPartition(ctx context.Context, request *partipb.Shutdo
 	// if this node is not the owner, we cannot shut down that partition.
 	// TODO: decide if error would be better here
 	if ownerNodeID != n.node.ID {
-		n.logger.Warningf("received partition shutdown for another node (%s), partition=(%d)", ownerNodeID, request.GetPartitionId())
+		n.logger.Warnf("received partition shutdown for another node (%s), partition=(%d)", ownerNodeID, request.GetPartitionId())
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}
 	// attempt to shut down the partition using the provided handler
 	if err := n.msgHandler.ShutdownPartition(ctx, partitionID); err != nil {
-		n.logger.Warningf("failed to shut down partition %d, %v", partitionID, err)
+		n.logger.Warnf("failed to shut down partition %d, %v", partitionID, err)
 		// TODO, should this return an error instead?
 		return &partipb.ShutdownPartitionResponse{Success: false}, nil
 	}

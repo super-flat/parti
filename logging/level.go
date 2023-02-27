@@ -17,15 +17,4 @@ const (
 	DebugLevel
 	// TraceLevel indicates Trace log level
 	TraceLevel
-	numLogLevels = 7
 )
-
-var levelName = [numLogLevels]string{
-	InfoLevel:    "INFO",
-	WarningLevel: "WARNING",
-	ErrorLevel:   "ERROR",
-	FatalLevel:   "FATAL",
-	PanicLevel:   "PANIC",
-	DebugLevel:   "DEBUG",
-	TraceLevel:   "TRACE",
-}
