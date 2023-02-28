@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -10,11 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/super-flat/parti/internal/raft/serializer"
+
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
-	"github.com/super-flat/parti/cluster/raft/serializer"
-	"github.com/super-flat/parti/log"
+	"github.com/pkg/errors"
+	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,6 +25,7 @@ import (
 
 const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
 
+// Node encapsulate information about a cluster Node
 type Node struct {
 	ID               string
 	RaftPort         int
@@ -33,25 +35,30 @@ type Node struct {
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	stopped          *uint32
-	logger           log.Logger
+	logger           logging.Logger
+	logLevel         logging.Level
 	mtx              *sync.Mutex
 	isStarted        bool
 	isBootstrapped   bool
 }
 
-// NewNode returns an raft node
-func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logger log.Logger, grpcServer *grpc.Server) (*Node, error) {
+// NewNode returns an raft Node
+func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel logging.Level, logger logging.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
+
+	// create the raft logger
+	raftLogger := newLog(logLevel, logger)
 
 	raftConf := hraft.DefaultConfig()
 	raftConf.LocalID = hraft.ServerID(nodeID)
 	raftLogCacheSize := 512
-	raftConf.LogLevel = "Info"
+	raftConf.LogLevel = raftLogger.GetLevel().String()
+	raftConf.Logger = raftLogger
 
 	// create a stable store
 	// TODO: see why hashicorp advises against use in prod, maybe
-	// implement custom one locally... assuming they dont like that
+	// implement custom one locally... assuming they don't like that
 	// it's in memory, but our nodes are ephemeral and keys are low
 	// cardinality, so should be OK.
 	stableStore := hraft.NewInmemStore()
@@ -62,7 +69,7 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	}
 
 	// snapshot store that discards everything
-	// TODO: see if there's any reason not to use this inmem snapshot store
+	// TODO: see if there's any reason not to use this in-mem snapshot store
 	var snapshotStore raft.SnapshotStore = raft.NewInmemSnapshotStore()
 	// var snapshotStore hraft.SnapshotStore = hraft.NewDiscardSnapshotStore()
 
@@ -99,12 +106,7 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	}, nil
 }
 
-// WithLogger sets custom log
-func (n *Node) WithLogger(logger log.Logger) {
-	n.logger = logger
-}
-
-// Start starts the Node
+// Start starts the node
 func (n *Node) Start(ctx context.Context) error {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
@@ -123,13 +125,18 @@ func (n *Node) Start(ctx context.Context) error {
 
 	// set up the tpc listener
 	listener, err := net.Listen("tcp", n.address)
+	// handle the error
 	if err != nil {
-		n.logger.Fatal(err)
+		// enrich the error message
+		enriched := errors.Wrapf(err, "failed to listen on address=%s", n.address)
+		n.logger.Error(enriched.Error())
+		return enriched
 	}
 	// serve grpc
 	go func() {
 		if err := n.GrpcServer.Serve(listener); err != nil {
-			n.logger.Fatal(err)
+			// here we panic because it is fundamental that the server start listening
+			panic(err)
 		}
 	}()
 
@@ -149,7 +156,7 @@ func (n *Node) waitForBootstrap() {
 		numPeers := 0
 		cfg := n.Raft.GetConfiguration()
 		if err := cfg.Error(); err != nil {
-			n.logger.Errorf("couldn't read config, %v", err)
+			n.logger.Error(errors.Wrap(err, "couldn't read config").Error())
 		} else {
 			numPeers = len(cfg.Configuration().Servers)
 		}
@@ -159,6 +166,8 @@ func (n *Node) waitForBootstrap() {
 			n.mtx.Unlock()
 			return
 		}
+
+		// add some debug log here
 		n.logger.Debugf("waiting for raft peers, current state %s", n.Raft.State().String())
 		time.Sleep(time.Second)
 	}
@@ -203,7 +212,7 @@ func (n *Node) Stop() {
 		// }
 		// shut down raft
 		if err := n.Raft.Shutdown().Error(); err != nil {
-			n.logger.Infof("Failed to shutdown Raft: %q\n", err.Error())
+			n.logger.Error(errors.Wrapf(err, "failed to shutdown raft").Error())
 		}
 		// shut down gRPC
 		n.logger.Info("Raft stopped")
@@ -255,7 +264,7 @@ func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	// contact remote peer
 	detailsResp, err := n.getPeerDetails(peerAddr)
 	if err != nil {
-		n.logger.Error(err)
+		n.logger.Error(err.Error())
 		return err
 	}
 	// confirm node ID match
@@ -283,12 +292,12 @@ func (n *Node) RemovePeer(nodeID string) error {
 		}
 	}
 
-	n.logger.Infof("did not find peer to remove '%s'", nodeID)
+	n.logger.Infof("did not find peer to remove Peer=%s", nodeID)
 	return nil
 }
 
 // RaftApply is used to apply any new logs to the raft cluster
-// this method does automatic forwarding to Leader Node
+// this method does automatic forwarding to Leader node
 func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
 	// serialize the payload for use in raft
 	payload, err := n.Serializer.Serialize(request)
@@ -379,7 +388,7 @@ func (n *Node) GetPeer(peerID string) (*Peer, error) {
 	return NewPeer(peerID, raftAddr), nil
 }
 
-// newNodeID returns a random node ID of length `size`
+// newNodeID returns a random Node ID of length `size`
 // nolint:unused
 func newNodeID(size int) string {
 	// TODO, do we need to do this anymore?

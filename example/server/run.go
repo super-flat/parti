@@ -8,11 +8,14 @@ import (
 
 	"github.com/super-flat/parti/cluster"
 	"github.com/super-flat/parti/cluster/membership"
-	"github.com/super-flat/parti/log"
+	"github.com/super-flat/parti/logging"
 )
 
 func Run() {
-	log.Info("starting example server")
+	// define the logger
+	logger := logging.DefaultLogger
+
+	logger.Info("starting example server")
 	ctx := context.Background()
 	var cancelCtx context.CancelFunc
 	ctx, cancelCtx = context.WithCancel(ctx)
@@ -21,22 +24,23 @@ func Run() {
 		panic(err)
 	}
 	// define a handler for our clustered app
-	handler := &ExampleHandler{}
+	handler := &ExampleHandler{logger: logger}
 	// run the raft node
 	numPartitions := uint32(10)
 	// define discovery
 	namespace := "default"
 	podLabels := map[string]string{"app": "parti"}
 	portName := "parti"
-	members := membership.NewKubernetes(namespace, podLabels, portName)
+	members := membership.NewKubernetes(namespace, podLabels, portName, logger)
 	// configure a cluster
 	partiNode := cluster.NewCluster(
 		ctx,
 		cfg.RaftPort,
 		handler,
-		numPartitions,
 		members,
-		log.DefaultLogger,
+		cluster.WithPartitionCount(numPartitions),
+		cluster.WithLogger(logger),
+		cluster.WithLogLevel(logging.DebugLevel),
 	)
 	// start the node
 	if err := partiNode.Start(ctx); err != nil {
@@ -58,5 +62,5 @@ func Run() {
 		done <- true
 	}()
 	<-done
-	log.Info("exiting example server")
+	logger.Info("exiting example server")
 }

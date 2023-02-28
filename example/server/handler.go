@@ -3,14 +3,18 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/super-flat/parti/cluster"
+	"github.com/super-flat/parti/logging"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-type ExampleHandler struct{}
+type ExampleHandler struct {
+	logger logging.Logger
+}
+
+var _ cluster.Handler = &ExampleHandler{}
 
 func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *anypb.Any) (*anypb.Any, error) {
 	// unpack inner msg
@@ -31,14 +35,12 @@ func (e *ExampleHandler) Handle(ctx context.Context, partitionID uint32, msg *an
 }
 
 func (e *ExampleHandler) StartPartition(ctx context.Context, partitionID uint32) error {
-	log.Printf("starting partition (%d)", partitionID)
+	e.logger.Info("starting partition", partitionID)
 	return nil
 }
 
 func (e *ExampleHandler) ShutdownPartition(ctx context.Context, partitionID uint32) error {
-	log.Printf("shutting down partition (%d)", partitionID)
+	e.logger.Info("shutting down partition", partitionID)
 	// time.Sleep(time.Second * 10)
 	return nil
 }
-
-var _ cluster.Handler = &ExampleHandler{}
