@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/super-flat/parti/cluster/serializer"
+	"github.com/super-flat/parti/internal/raft/serializer"
 
 	hraft "github.com/hashicorp/raft"
 	partipb "github.com/super-flat/parti/pb/parti/v1"

@@ -1,4 +1,4 @@
-package cluster
+package raft
 
 import (
 	"context"
@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/super-flat/parti/internal/raft/serializer"
+
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/cluster/serializer"
 	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
@@ -24,8 +25,8 @@ import (
 
 const nodeIDCharacters = "abcdefghijklmnopqrstuvwxyz"
 
-// node encapsulate information about a cluster node
-type node struct {
+// Node encapsulate information about a cluster Node
+type Node struct {
 	ID               string
 	RaftPort         int
 	address          string
@@ -41,8 +42,8 @@ type node struct {
 	isBootstrapped   bool
 }
 
-// newNode returns an raft node
-func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel logging.Level, logger logging.Logger, grpcServer *grpc.Server) (*node, error) {
+// NewNode returns an raft Node
+func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel logging.Level, logger logging.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 
@@ -57,7 +58,7 @@ func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 
 	// create a stable store
 	// TODO: see why hashicorp advises against use in prod, maybe
-	// implement custom one locally... assuming they dont like that
+	// implement custom one locally... assuming they don't like that
 	// it's in memory, but our nodes are ephemeral and keys are low
 	// cardinality, so should be OK.
 	stableStore := hraft.NewInmemStore()
@@ -90,7 +91,7 @@ func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 	// initial stopped flag
 	var stopped uint32
 
-	return &node{
+	return &Node{
 		ID:               nodeID,
 		RaftPort:         raftPort,
 		address:          addr,
@@ -106,7 +107,7 @@ func newNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 }
 
 // Start starts the node
-func (n *node) Start(ctx context.Context) error {
+func (n *Node) Start(ctx context.Context) error {
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()
@@ -147,7 +148,7 @@ func (n *node) Start(ctx context.Context) error {
 	return nil
 }
 
-func (n *node) waitForBootstrap() {
+func (n *Node) waitForBootstrap() {
 	for {
 		if !n.isStarted {
 			return
@@ -172,11 +173,11 @@ func (n *node) waitForBootstrap() {
 	}
 }
 
-func (n *node) IsBootstrapped() bool {
+func (n *Node) IsBootstrapped() bool {
 	return n.isBootstrapped
 }
 
-func (n *node) Bootstrap() error {
+func (n *Node) Bootstrap() error {
 	podIP := os.Getenv("POD_IP")
 	if podIP == "" {
 		return errors.New("missing POD_IP")
@@ -201,7 +202,7 @@ func (n *node) Bootstrap() error {
 }
 
 // Stop stops the node and notifies on stopped channel returned in Start
-func (n *node) Stop() {
+func (n *Node) Stop() {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	if n.isStarted {
@@ -220,7 +221,7 @@ func (n *node) Stop() {
 	}
 }
 
-func (n *node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
+func (n *Node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsResponse, error) {
 	var opt grpc.DialOption = grpc.EmptyDialOption{}
 	ctx := context.Background()
 	conn, err := grpc.DialContext(ctx,
@@ -241,7 +242,7 @@ func (n *node) getPeerDetails(peerAddress string) (*partipb.GetPeerDetailsRespon
 	return response, nil
 }
 
-func (n *node) AddPeer(nodeID string, host string, port uint16) error {
+func (n *Node) AddPeer(nodeID string, host string, port uint16) error {
 	if !n.IsLeader() {
 		return nil
 	}
@@ -279,7 +280,7 @@ func (n *node) AddPeer(nodeID string, host string, port uint16) error {
 	return res.Error()
 }
 
-func (n *node) RemovePeer(nodeID string) error {
+func (n *Node) RemovePeer(nodeID string) error {
 	if !n.IsLeader() {
 		return nil
 	}
@@ -297,7 +298,7 @@ func (n *node) RemovePeer(nodeID string) error {
 
 // RaftApply is used to apply any new logs to the raft cluster
 // this method does automatic forwarding to Leader node
-func (n *node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
+func (n *Node) RaftApply(request interface{}, timeout time.Duration) (interface{}, error) {
 	// serialize the payload for use in raft
 	payload, err := n.Serializer.Serialize(request)
 	if err != nil {
@@ -306,7 +307,7 @@ func (n *node) RaftApply(request interface{}, timeout time.Duration) (interface{
 	return n.raftApplyLocalLeader(payload, timeout)
 }
 
-func (n *node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
+func (n *Node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (interface{}, error) {
 	if !n.IsLeader() {
 		return nil, errors.New("must be leader")
 	}
@@ -323,7 +324,7 @@ func (n *node) raftApplyLocalLeader(payload []byte, timeout time.Duration) (inte
 }
 
 // IsLeader returns true if the current node is the cluster leader
-func (n *node) IsLeader() bool {
+func (n *Node) IsLeader() bool {
 	// _, id := n.Raft.LeaderWithID()
 	// return n.ID == string(id)
 	return n.Raft.VerifyLeader().Error() == nil
@@ -331,13 +332,13 @@ func (n *node) IsLeader() bool {
 
 // HasLeader returns true if the current node is aware of a cluster leader
 // including itself
-func (n *node) HasLeader() bool {
+func (n *Node) HasLeader() bool {
 	leaderAddr, _ := n.Raft.LeaderWithID()
 	return string(leaderAddr) != ""
 }
 
 // GetPeerSelf returns a Peer for the current node
-func (n *node) GetPeerSelf() *Peer {
+func (n *Node) GetPeerSelf() *Peer {
 	// todo: make this smarter for self
 	raftAddr := fmt.Sprintf("0.0.0.0:%d", n.RaftPort)
 	n.logger.Debugf("returning peer for self %s @ %s", n.ID, raftAddr)
@@ -345,7 +346,7 @@ func (n *node) GetPeerSelf() *Peer {
 }
 
 // GetPeers returns all nodes in raft cluster (including self)
-func (n *node) GetPeers() []*Peer {
+func (n *Node) GetPeers() []*Peer {
 	peers := make(map[string]*Peer, 3)
 
 	if cfg := n.Raft.GetConfiguration(); cfg.Error() == nil {
@@ -365,7 +366,7 @@ func (n *node) GetPeers() []*Peer {
 }
 
 // GetPeer returns a specific peer given an ID
-func (n *node) GetPeer(peerID string) (*Peer, error) {
+func (n *Node) GetPeer(peerID string) (*Peer, error) {
 	if peerID == n.ID {
 		return n.GetPeerSelf(), nil
 	}
@@ -387,7 +388,7 @@ func (n *node) GetPeer(peerID string) (*Peer, error) {
 	return NewPeer(peerID, raftAddr), nil
 }
 
-// newNodeID returns a random node ID of length `size`
+// newNodeID returns a random Node ID of length `size`
 // nolint:unused
 func newNodeID(size int) string {
 	// TODO, do we need to do this anymore?
@@ -401,14 +402,14 @@ func newNodeID(size int) string {
 
 // Delete a key from the cluster state
 // nolint:unused
-func Delete(n *node, group string, key string) error {
+func Delete(n *Node, group string, key string) error {
 	request := &partipb.FsmRemoveRequest{Group: group, Key: key}
 	_, err := n.RaftApply(request, time.Second)
 	return err
 }
 
 // Put a key and value in cluster state
-func Put(n *node, group string, key string, value proto.Message) error {
+func Put(n *Node, group string, key string, value proto.Message) error {
 	anyVal, err := anypb.New(value)
 	if err != nil {
 		return err
@@ -419,7 +420,7 @@ func Put(n *node, group string, key string, value proto.Message) error {
 }
 
 // Get the value for a key in cluster state
-func Get[T any](n *node, group, key string) (T, error) {
+func Get[T any](n *Node, group, key string) (T, error) {
 	request := &partipb.FsmGetRequest{Group: group, Key: key}
 	result, err := n.RaftApply(request, time.Second)
 	var output T

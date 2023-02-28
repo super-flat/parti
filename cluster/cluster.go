@@ -10,10 +10,11 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/cluster/fsm"
 	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/rebalance"
-	"github.com/super-flat/parti/cluster/serializer"
+	"github.com/super-flat/parti/internal/raft"
+	"github.com/super-flat/parti/internal/raft/fsm"
+	"github.com/super-flat/parti/internal/raft/serializer"
 	"github.com/super-flat/parti/logging"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
@@ -22,12 +23,6 @@ import (
 
 const (
 	partitionsGroupName = "partitions"
-	namespace           = "default"
-	portName            = "parti"
-)
-
-var (
-	podLabels = map[string]string{"app": "parti"}
 )
 
 type Cluster struct {
@@ -35,39 +30,32 @@ type Cluster struct {
 	isStarted          bool
 	partitionCount     uint32
 	membershipProvider membership.Provider
-	node               *node
+	node               *raft.Node
 	nodeData           *fsm.ProtoFsm
 	grpcServer         *grpc.Server
 	msgHandler         Handler
 	logger             logging.Logger
 	logLevel           logging.Level
-	Serializer         serializer.Serializer
 }
 
 // NewCluster creates an instance of Cluster
-func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, opts ...Option) *Cluster {
+func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, membershipProvider membership.Provider, opts ...Option) *Cluster {
 	// create an instance of cluster with some default values
 	cluster := &Cluster{
-		mtx:            &sync.RWMutex{},
-		isStarted:      false,
-		partitionCount: 20,
-		nodeData:       fsm.NewProtoFsm(),
-		grpcServer:     grpc.NewServer(),
-		msgHandler:     msgHandler,
-		logger:         logging.DefaultLogger,
-		logLevel:       logging.InfoLevel,
-		Serializer:     serializer.NewProtoSerializer(),
+		mtx:                &sync.RWMutex{},
+		isStarted:          false,
+		partitionCount:     20,
+		nodeData:           fsm.NewProtoFsm(),
+		grpcServer:         grpc.NewServer(),
+		msgHandler:         msgHandler,
+		logger:             logging.DefaultLogger,
+		logLevel:           logging.InfoLevel,
+		membershipProvider: membershipProvider,
 	}
 
 	// apply the various options to override the default values
 	for _, opt := range opts {
 		opt.Apply(cluster)
-	}
-
-	// special scenario of setting the membership because of the logger
-	if cluster.membershipProvider == nil {
-		// we always default to k8s membership provider
-		cluster.membershipProvider = membership.NewKubernetes(namespace, podLabels, portName, cluster.logger)
 	}
 
 	// retrieve the node ID from the membership implementation
@@ -77,11 +65,11 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, opts .
 	}
 
 	// instantiate the raft node
-	node, err := newNode(
+	node, err := raft.NewNode(
 		nodeID,
 		int(raftPort),
 		cluster.nodeData,
-		cluster.Serializer,
+		serializer.NewProtoSerializer(),
 		cluster.logLevel,
 		cluster.logger,
 		cluster.grpcServer,
@@ -249,7 +237,7 @@ func (n *Cluster) callPeerBootstrap(addr string) (*partipb.BootstrapResponse, er
 	})
 }
 
-// leaderRebalance allows the leader node to delegate partitions to its
+// leaderRebalance allows the leader Node to delegate partitions to its
 // cluster peers, considering nodes that have left and new nodes that
 // have joined, with a goal of evenly distributing the work.
 func (n *Cluster) leaderRebalance() {
@@ -266,7 +254,7 @@ func (n *Cluster) leaderRebalance() {
 		// TODO: should this be a different context?
 		ctx := context.Background()
 		// get active peers
-		peerMap := map[string]*Peer{}
+		peerMap := map[string]*raft.Peer{}
 		activePeerIDs := make([]string, 0)
 		for _, peer := range n.node.GetPeers() {
 			if peer.IsReady() {
@@ -373,7 +361,7 @@ func (n *Cluster) leaderRebalance() {
 	}
 }
 
-// getPartitionNode returns the node that owns a partition
+// getPartitionNode returns the Node that owns a partition
 func (n *Cluster) getPartitionNode(partitionID uint32) (string, error) {
 	val, err := n.getPartition(partitionID)
 	return val.GetOwner(), err
@@ -386,7 +374,7 @@ func (n *Cluster) getPartition(partitionID uint32) (*partipb.PartitionOwnership,
 	return val, err
 }
 
-// setPartition assigns a partition to a node
+// setPartition assigns a partition to a Node
 func (n *Cluster) setPartition(partitionID uint32, nodeID string, acceptMessages bool) error {
 	n.logger.Info(fmt.Sprintf("assigning node (%s) partition (%d) accepting messages (%v)", nodeID, partitionID, acceptMessages))
 
@@ -398,7 +386,7 @@ func (n *Cluster) setPartition(partitionID uint32, nodeID string, acceptMessages
 		AcceptingMessages: acceptMessages,
 	}
 
-	return Put(n.node, partitionsGroupName, key, value)
+	return raft.Put(n.node, partitionsGroupName, key, value)
 }
 
 // PartitionMappings returns a map of partition to node ID
@@ -559,7 +547,7 @@ func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 // getClient returns a gRPC client for the given peer
 // TODO: if peer is self, return the local implementation instead of forcing
 // a gRPC call
-func getClient(ctx context.Context, p *Peer) partipb.ClusteringClient {
+func getClient(ctx context.Context, p *raft.Peer) partipb.ClusteringClient {
 	// make the grpc client address
 	grpcAddr := fmt.Sprintf("%s:%d", p.Host, p.RaftPort)
 	// set up the grpc client connection

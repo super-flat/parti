@@ -1,4 +1,4 @@
-package cluster
+package raft
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 )
 
 type RPCServer struct {
-	node *node
+	node *Node
 }
 
 var _ partipb.RaftServer = &RPCServer{}
 
-func NewRPCServer(node *node) *RPCServer {
+func NewRPCServer(node *Node) *RPCServer {
 	return &RPCServer{node: node}
 }
 

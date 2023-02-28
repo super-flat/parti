@@ -1,8 +1,6 @@
 package cluster
 
 import (
-	"github.com/super-flat/parti/cluster/membership"
-	"github.com/super-flat/parti/cluster/serializer"
 	"github.com/super-flat/parti/logging"
 )
 
@@ -21,13 +19,6 @@ func (f OptionFunc) Apply(c *Cluster) {
 	f(c)
 }
 
-// WithSerializer sets the serializer to use ob the raft node
-func WithSerializer(serializer serializer.Serializer) Option {
-	return OptionFunc(func(cluster *Cluster) {
-		cluster.Serializer = serializer
-	})
-}
-
 // WithLogger sets the logger
 func WithLogger(logger logging.Logger) Option {
 	return OptionFunc(func(cluster *Cluster) {
@@ -39,13 +30,6 @@ func WithLogger(logger logging.Logger) Option {
 func WithLogLevel(level logging.Level) Option {
 	return OptionFunc(func(cluster *Cluster) {
 		cluster.logLevel = level
-	})
-}
-
-// WithMembershipProvider sets the membership provider
-func WithMembershipProvider(provider membership.Provider) Option {
-	return OptionFunc(func(cluster *Cluster) {
-		cluster.membershipProvider = provider
 	})
 }
 

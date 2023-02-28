@@ -37,8 +37,8 @@ func Run() {
 		ctx,
 		cfg.RaftPort,
 		handler,
+		members,
 		cluster.WithPartitionCount(numPartitions),
-		cluster.WithMembershipProvider(members),
 		cluster.WithLogger(logger),
 		cluster.WithLogLevel(logging.DebugLevel),
 	)
