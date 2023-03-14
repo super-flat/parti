@@ -1,6 +1,20 @@
-VERSION 0.6
+VERSION 0.7
+PROJECT super-flat/tools
 
 FROM golang:1.18.7-alpine
+
+# run a PR branch is created
+pr:
+  PIPELINE
+  TRIGGER pr main
+  BUILD +lint
+
+# run on when a push to main is made
+main:
+  PIPELINE
+  TRIGGER push main
+  BUILD +lint
+
 
 golang-base:
     WORKDIR /app
