@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/raft v1.3.11
 	github.com/joho/godotenv v1.5.1
 	github.com/pkg/errors v0.9.1
-	github.com/rs/zerolog v1.29.0
+	github.com/rs/zerolog v1.29.1
 	github.com/spf13/cobra v1.6.1
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
