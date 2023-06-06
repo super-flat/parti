@@ -16,13 +16,13 @@ func NewRPCServer(node *Node) *RPCServer {
 	return &RPCServer{node: node}
 }
 
-func (r RPCServer) GetPeerDetails(ctx context.Context, req *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) {
+func (r RPCServer) GetPeerDetails(ctx context.Context, req *partipb.GetPeerDetailsRequest) (*partipb.GetPeerDetailsResponse, error) { // nolint
 	return &partipb.GetPeerDetailsResponse{
 		ServerId: r.node.ID,
 	}, nil
 }
 
-func (r RPCServer) Bootstrap(ctx context.Context, req *partipb.BootstrapRequest) (*partipb.BootstrapResponse, error) {
+func (r RPCServer) Bootstrap(ctx context.Context, req *partipb.BootstrapRequest) (*partipb.BootstrapResponse, error) { // nolint
 	resp := &partipb.BootstrapResponse{
 		PeerId:    r.node.ID,
 		InCluster: r.node.isBootstrapped,

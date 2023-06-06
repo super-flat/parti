@@ -1,8 +1,6 @@
 package cluster
 
-import (
-	"github.com/super-flat/parti/logging"
-)
+import "github.com/super-flat/parti/log"
 
 // Option is the interface that applies a configuration option.
 type Option interface {
@@ -20,14 +18,14 @@ func (f OptionFunc) Apply(c *Cluster) {
 }
 
 // WithLogger sets the logger
-func WithLogger(logger logging.Logger) Option {
+func WithLogger(logger log.Logger) Option {
 	return OptionFunc(func(cluster *Cluster) {
 		cluster.logger = logger
 	})
 }
 
 // WithLogLevel sets the log level
-func WithLogLevel(level logging.Level) Option {
+func WithLogLevel(level log.Level) Option {
 	return OptionFunc(func(cluster *Cluster) {
 		cluster.logLevel = level
 	})

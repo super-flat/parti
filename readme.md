@@ -31,5 +31,5 @@ go run ./example send --partition 9 --addr 0.0.0.0:50001 hello world
 
 ### Proposed rebalance procedure
 1. tell all nodes the pause the partition
-1. confirm with prior owner that they have shut down (or confirm they are dead and not in the cluster)
-1. inform all nodes of the new owner and that it's started
+2. confirm with prior owner that they have shut down (or confirm they are dead and not in the cluster)
+3. inform all nodes of the new owner and that it's started

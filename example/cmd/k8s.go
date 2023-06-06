@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/super-flat/parti/cluster/membership"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/discovery"
+	partilog "github.com/super-flat/parti/log"
 )
 
 func init() {
@@ -29,21 +29,21 @@ func init() {
 				podLabels[labelKey] = labelValue
 			}
 
-			members := membership.NewKubernetes(*namespace, podLabels, *portName, logging.DefaultLogger)
+			members := discovery.NewKubernetes(*namespace, podLabels, *portName, partilog.DefaultLogger)
 			outChan, err := members.Listen(cmd.Context())
 			if err != nil {
 				log.Fatal(err)
 			}
 			for change := range outChan {
-				switch change.Change {
-				case membership.MemberAdded:
+				switch change.Type {
+				case discovery.MemberAdded:
 					log.Printf("member added %s @ %s:%d\n", change.ID, change.Host, change.Port)
-				case membership.MemberRemoved:
+				case discovery.MemberRemoved:
 					log.Printf("member removed %s\n", change.ID)
-				case membership.MemberPinged:
+				case discovery.MemberPinged:
 					log.Printf("member pinged %s\n", change.ID)
 				default:
-					log.Printf("unhandled change %v", change.Change)
+					log.Printf("unhandled change %v", change.Type)
 				}
 			}
 		},

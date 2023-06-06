@@ -6,9 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/super-flat/parti/internal/raft/serializer"
-
 	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/internal/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -47,7 +46,6 @@ func (p *ProtoFsm) Apply(raftLog *hraft.Log) interface{} {
 		if err != nil {
 			return err
 		}
-		// TODO: copied this from easyraft impl, but dont love it.
 		result, err := p.applyProtoCommand(msg)
 		if err != nil {
 			return err
@@ -118,7 +116,7 @@ func (p *ProtoFsm) Snapshot() (hraft.FSMSnapshot, error) {
 // Restore is used to restore an FSM from a snapshot. It is not called
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
-func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
+func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error { // nolint
 	return errors.New("not implemented")
 }
 

@@ -1,23 +1,24 @@
-package membership
+package discovery
 
 import "context"
 
-type ChangeType uint16
+type EventType uint16
 
 const (
-	MemberAdded ChangeType = iota
+	MemberAdded EventType = iota
 	MemberRemoved
 	MemberPinged
 )
 
+// Event specifies the discovery event
 type Event struct {
-	ID     string
-	Host   string
-	Port   uint16
-	Change ChangeType
+	ID   string
+	Host string
+	Port uint16
+	Type EventType
 }
 
-// Provider implements membership methods for a given provider
+// Provider implements discovery methods for a given provider
 type Provider interface {
 	// GetNodeID returns this node's unique ID in the cluster
 	GetNodeID(ctx context.Context) (nodeID string, err error)

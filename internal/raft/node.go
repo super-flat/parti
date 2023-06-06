@@ -9,13 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/super-flat/parti/internal/raft/serializer"
-
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/hashicorp/raft"
 	hraft "github.com/hashicorp/raft"
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/internal/raft/serializer"
+	partilog "github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,15 +34,15 @@ type Node struct {
 	TransportManager *transport.Manager
 	Serializer       serializer.Serializer
 	stopped          *uint32
-	logger           logging.Logger
-	logLevel         logging.Level
+	logger           partilog.Logger
+	logLevel         partilog.Level
 	mtx              *sync.Mutex
 	isStarted        bool
 	isBootstrapped   bool
 }
 
 // NewNode returns an raft Node
-func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel logging.Level, logger logging.Logger, grpcServer *grpc.Server) (*Node, error) {
+func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializer.Serializer, logLevel partilog.Level, logger partilog.Logger, grpcServer *grpc.Server) (*Node, error) {
 	// default raft config
 	addr := fmt.Sprintf("%s:%d", "0.0.0.0", raftPort)
 
@@ -107,7 +106,7 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 }
 
 // Start starts the node
-func (n *Node) Start(ctx context.Context) error {
+func (n *Node) Start(ctx context.Context) error { // nolint
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()

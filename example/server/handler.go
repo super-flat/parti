@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/super-flat/parti/cluster"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/log"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ExampleHandler struct {
-	logger logging.Logger
+	logger log.Logger
 }
 
 var _ cluster.Handler = &ExampleHandler{}
@@ -40,7 +40,7 @@ func (e *ExampleHandler) StartPartition(ctx context.Context, partitionID uint32)
 }
 
 func (e *ExampleHandler) ShutdownPartition(ctx context.Context, partitionID uint32) error {
-	e.logger.Info("shutting down partition", partitionID)
+	e.logger.Infof("shutting down partition: %d", partitionID)
 	// time.Sleep(time.Second * 10)
 	return nil
 }
