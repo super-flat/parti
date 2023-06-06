@@ -3,6 +3,18 @@ PROJECT super-flat/tools
 
 FROM tochemey/docker-go:1.20.4-0.8.0
 
+# run a PR branch is created
+pr:
+  PIPELINE
+  TRIGGER pr main
+  BUILD +lint
+
+# run on when a push to main is made
+main:
+  PIPELINE
+  TRIGGER push main
+  BUILD +lint
+
 protogen:
     # copy the proto files to generate
     COPY --dir proto/ ./

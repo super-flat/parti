@@ -65,7 +65,7 @@ func NewKubernetes(namespace string, podLabels map[string]string, portName strin
 }
 
 // GetNodeID returns the pod name set by an environment variable
-func (k *Kubernetes) GetNodeID(ctx context.Context) (string, error) {
+func (k *Kubernetes) GetNodeID(ctx context.Context) (string, error) { // nolint
 	nodeID := os.Getenv("POD_NAME")
 	if nodeID == "" {
 		return "", errors.New("missing POD_NAME env var")
@@ -107,7 +107,7 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan Event, error) {
 }
 
 // Stop should stop the discovery method and all of its goroutines, it should close discovery channel returned in Start
-func (k *Kubernetes) Stop(ctx context.Context) {
+func (k *Kubernetes) Stop(ctx context.Context) { // nolint
 	k.mtx.Lock()
 	defer k.mtx.Unlock()
 	if k.isStarted {

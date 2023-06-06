@@ -106,7 +106,7 @@ func NewNode(nodeID string, raftPort int, raftFsm hraft.FSM, serializer serializ
 }
 
 // Start starts the node
-func (n *Node) Start(ctx context.Context) error {
+func (n *Node) Start(ctx context.Context) error { // nolint
 	n.logger.Infof("Starting Raft Node, ID=%s", n.ID)
 
 	n.mtx.Lock()

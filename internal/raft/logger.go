@@ -53,7 +53,7 @@ func (l log) Log(level hclog.Level, msg string, args ...interface{}) {
 }
 
 // Trace emits the message and args at TRACE level
-func (l log) Trace(msg string, args ...interface{}) {
+func (l log) Trace(string, ...interface{}) {
 }
 
 // Debug emits the message and args at DEBUG level
@@ -109,7 +109,7 @@ func (l log) ImpliedArgs() []interface{} {
 // With return a sub-Logger for which every emitted log message will contain
 // the given key/value pairs. This is used to create a context specific
 // Logger. No necessary in this current use case
-func (l log) With(args ...interface{}) hclog.Logger {
+func (l log) With(...interface{}) hclog.Logger {
 	return log{}
 }
 
@@ -120,12 +120,12 @@ func (l log) Name() string {
 
 // Named create a new sub-Logger that a name descending from the current name.
 // This is used to create a subsystem specific Logger. However, this is not needed in this implementation
-func (l log) Named(name string) hclog.Logger {
+func (l log) Named(string) hclog.Logger {
 	return log{}
 }
 
 // ResetNamed implementation
-func (l log) ResetNamed(name string) hclog.Logger {
+func (l log) ResetNamed(string) hclog.Logger {
 	return log{}
 }
 
@@ -171,6 +171,6 @@ func (l log) StandardLogger(opts *hclog.StandardLoggerOptions) *golog.Logger {
 }
 
 // StandardWriter implementation
-func (l log) StandardWriter(opts *hclog.StandardLoggerOptions) io.Writer {
+func (l log) StandardWriter(*hclog.StandardLoggerOptions) io.Writer {
 	return io.Discard
 }

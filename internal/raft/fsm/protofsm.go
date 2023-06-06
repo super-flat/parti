@@ -116,7 +116,7 @@ func (p *ProtoFsm) Snapshot() (hraft.FSMSnapshot, error) {
 // Restore is used to restore an FSM from a snapshot. It is not called
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
-func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
+func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error { // nolint
 	return errors.New("not implemented")
 }
 
