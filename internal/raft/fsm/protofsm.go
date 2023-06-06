@@ -6,9 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/super-flat/parti/internal/raft/serializer"
-
 	hraft "github.com/hashicorp/raft"
+	"github.com/super-flat/parti/internal/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -47,7 +46,6 @@ func (p *ProtoFsm) Apply(raftLog *hraft.Log) interface{} {
 		if err != nil {
 			return err
 		}
-		// TODO: copied this from easyraft impl, but dont love it.
 		result, err := p.applyProtoCommand(msg)
 		if err != nil {
 			return err

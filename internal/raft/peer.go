@@ -6,12 +6,14 @@ import (
 	"strings"
 )
 
+// Peer specifies a raft peer
 type Peer struct {
 	ID       string
 	Host     string
 	RaftPort uint16
 }
 
+// NewPeer creates an instance of Peer
 func NewPeer(id string, raftAddr string) *Peer {
 	addrParts := strings.Split(raftAddr, ":")
 	if len(addrParts) != 2 {
@@ -27,6 +29,7 @@ func NewPeer(id string, raftAddr string) *Peer {
 	}
 }
 
+// IsReady specifies whether a given peer is ready
 func (p Peer) IsReady() bool {
 	return true
 }

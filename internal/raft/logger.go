@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/super-flat/parti/logging"
+	partilog "github.com/super-flat/parti/log"
 )
 
 var (
@@ -19,12 +19,12 @@ var (
 // properly display raft logging info according to the logger provided
 // by the implementor
 type log struct {
-	level  logging.Level
-	logger logging.Logger
+	level  partilog.Level
+	logger partilog.Logger
 }
 
 // newLog returns an instance of log
-func newLog(level logging.Level, logger logging.Logger) *log {
+func newLog(level partilog.Level, logger partilog.Logger) *log {
 	protect.Do(func() {
 		if def == nil {
 			def = &log{
@@ -45,8 +45,6 @@ func (l log) Log(level hclog.Level, msg string, args ...interface{}) {
 		l.logger.Debugf(msg, args...)
 	case hclog.Warn:
 		l.logger.Warnf(msg, args...)
-	case hclog.Trace:
-		l.logger.Tracef(msg, args...)
 	case hclog.Error:
 		l.logger.Errorf(msg, args...)
 	default:
@@ -56,7 +54,6 @@ func (l log) Log(level hclog.Level, msg string, args ...interface{}) {
 
 // Trace emits the message and args at TRACE level
 func (l log) Trace(msg string, args ...interface{}) {
-	l.logger.Tracef(msg, args...)
 }
 
 // Debug emits the message and args at DEBUG level
@@ -81,27 +78,27 @@ func (l log) Error(msg string, args ...interface{}) {
 
 // IsTrace indicates that the logger would emit TRACE level logs
 func (l log) IsTrace() bool {
-	return l.level == logging.TraceLevel
+	return false
 }
 
 // IsDebug indicates that the logger would emit DEBUG level logs
 func (l log) IsDebug() bool {
-	return l.level == logging.DebugLevel
+	return l.level == partilog.DebugLevel
 }
 
 // IsInfo indicates that the logger would emit INFO level logs
 func (l log) IsInfo() bool {
-	return l.level == logging.InfoLevel
+	return l.level == partilog.InfoLevel
 }
 
 // IsWarn indicates that the logger would emit WARN level logs
 func (l log) IsWarn() bool {
-	return l.level == logging.WarningLevel
+	return l.level == partilog.WarningLevel
 }
 
 // IsError indicates that the logger would emit ERROR level logs
 func (l log) IsError() bool {
-	return l.level == logging.ErrorLevel
+	return l.level == partilog.ErrorLevel
 }
 
 // ImpliedArgs returns the loggers implied args
@@ -113,66 +110,59 @@ func (l log) ImpliedArgs() []interface{} {
 // the given key/value pairs. This is used to create a context specific
 // Logger. No necessary in this current use case
 func (l log) With(args ...interface{}) hclog.Logger {
-	return l
+	return log{}
 }
 
 // Name returns the loggers name
 func (l log) Name() string {
-	return ""
+	return "[PARTI]"
 }
 
 // Named create a new sub-Logger that a name descending from the current name.
 // This is used to create a subsystem specific Logger. However, this is not needed in this implementation
 func (l log) Named(name string) hclog.Logger {
-	return l
+	return log{}
 }
 
+// ResetNamed implementation
 func (l log) ResetNamed(name string) hclog.Logger {
-	// TODO proper implementation
-	return l
+	return log{}
 }
 
-// SetLevel update the logging level on-the-fly. This will affect all subloggers as
-// well.
+// SetLevel implementation
 func (l log) SetLevel(level hclog.Level) {
 	switch level {
 	case hclog.Info:
-		l.level = logging.InfoLevel
+		l.level = partilog.InfoLevel
 	case hclog.Debug:
-		l.level = logging.DebugLevel
+		l.level = partilog.DebugLevel
 	case hclog.Warn:
-		l.level = logging.WarningLevel
-	case hclog.Trace:
-		l.level = logging.TraceLevel
+		l.level = partilog.WarningLevel
 	case hclog.Error:
-		l.level = logging.ErrorLevel
+		l.level = partilog.ErrorLevel
 	default:
-		l.level = logging.DebugLevel
+		l.level = partilog.DebugLevel
 	}
 }
 
 // GetLevel returns the log level
 func (l log) GetLevel() hclog.Level {
 	switch l.level {
-	case logging.InfoLevel:
+	case partilog.InfoLevel:
 		return hclog.Info
-	case logging.DebugLevel:
+	case partilog.DebugLevel:
 		return hclog.Debug
-	case logging.TraceLevel:
-		return hclog.Trace
-	case logging.ErrorLevel:
-	case logging.FatalLevel:
-	case logging.PanicLevel:
+	case partilog.ErrorLevel:
+	case partilog.FatalLevel:
+	case partilog.PanicLevel:
 		return hclog.Error
-	case logging.WarningLevel:
+	case partilog.WarningLevel:
 		return hclog.Warn
 	}
 	return hclog.Debug
 }
 
-// StandardLogger create a *log.Logger that will send it's data through this Logger. This
-// allows packages that expect to be using the standard library log to actually
-// use this logger.
+// StandardLogger implementation.
 func (l log) StandardLogger(opts *hclog.StandardLoggerOptions) *golog.Logger {
 	if opts == nil {
 		opts = &hclog.StandardLoggerOptions{}
@@ -180,6 +170,7 @@ func (l log) StandardLogger(opts *hclog.StandardLoggerOptions) *golog.Logger {
 	return golog.New(l.StandardWriter(opts), "", 0)
 }
 
+// StandardWriter implementation
 func (l log) StandardWriter(opts *hclog.StandardLoggerOptions) io.Writer {
-	return nil
+	return io.Discard
 }

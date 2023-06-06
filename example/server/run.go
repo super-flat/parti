@@ -7,13 +7,13 @@ import (
 	"syscall"
 
 	"github.com/super-flat/parti/cluster"
-	"github.com/super-flat/parti/cluster/membership"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/discovery"
+	"github.com/super-flat/parti/log"
 )
 
 func Run() {
 	// define the logger
-	logger := logging.DefaultLogger
+	logger := log.DefaultLogger
 
 	logger.Info("starting example server")
 	ctx := context.Background()
@@ -31,7 +31,7 @@ func Run() {
 	namespace := "default"
 	podLabels := map[string]string{"app": "parti"}
 	portName := "parti"
-	members := membership.NewKubernetes(namespace, podLabels, portName, logger)
+	members := discovery.NewKubernetes(namespace, podLabels, portName, logger)
 	// configure a cluster
 	partiNode := cluster.NewCluster(
 		ctx,
@@ -40,7 +40,7 @@ func Run() {
 		members,
 		cluster.WithPartitionCount(numPartitions),
 		cluster.WithLogger(logger),
-		cluster.WithLogLevel(logging.DebugLevel),
+		cluster.WithLogLevel(log.DebugLevel),
 	)
 	// start the node
 	if err := partiNode.Start(ctx); err != nil {

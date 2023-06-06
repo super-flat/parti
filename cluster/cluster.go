@@ -8,14 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/cluster/membership"
 	"github.com/super-flat/parti/cluster/rebalance"
+	"github.com/super-flat/parti/discovery"
 	"github.com/super-flat/parti/internal/raft"
 	"github.com/super-flat/parti/internal/raft/fsm"
 	"github.com/super-flat/parti/internal/raft/serializer"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/log"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,31 +25,31 @@ const (
 )
 
 type Cluster struct {
-	mtx                *sync.RWMutex
-	isStarted          bool
-	partitionCount     uint32
-	membershipProvider membership.Provider
-	node               *raft.Node
-	nodeData           *fsm.ProtoFsm
-	grpcServer         *grpc.Server
-	msgHandler         Handler
-	logger             logging.Logger
-	logLevel           logging.Level
+	mtx               *sync.RWMutex
+	isStarted         bool
+	partitionCount    uint32
+	discoveryProvider discovery.Provider
+	node              *raft.Node
+	fsm               *fsm.ProtoFsm
+	grpcServer        *grpc.Server
+	msgHandler        Handler
+	logger            log.Logger
+	logLevel          log.Level
 }
 
 // NewCluster creates an instance of Cluster
-func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, membershipProvider membership.Provider, opts ...Option) *Cluster {
+func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, membershipProvider discovery.Provider, opts ...Option) *Cluster {
 	// create an instance of cluster with some default values
 	cluster := &Cluster{
-		mtx:                &sync.RWMutex{},
-		isStarted:          false,
-		partitionCount:     20,
-		nodeData:           fsm.NewProtoFsm(),
-		grpcServer:         grpc.NewServer(),
-		msgHandler:         msgHandler,
-		logger:             logging.DefaultLogger,
-		logLevel:           logging.InfoLevel,
-		membershipProvider: membershipProvider,
+		mtx:               &sync.RWMutex{},
+		isStarted:         false,
+		partitionCount:    20,
+		fsm:               fsm.NewProtoFsm(),
+		grpcServer:        grpc.NewServer(),
+		msgHandler:        msgHandler,
+		logger:            log.DefaultLogger,
+		logLevel:          log.InfoLevel,
+		discoveryProvider: membershipProvider,
 	}
 
 	// apply the various options to override the default values
@@ -59,7 +58,7 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, member
 	}
 
 	// retrieve the node ID from the membership implementation
-	nodeID, err := cluster.membershipProvider.GetNodeID(ctx)
+	nodeID, err := cluster.discoveryProvider.GetNodeID(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -68,7 +67,7 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, member
 	node, err := raft.NewNode(
 		nodeID,
 		int(raftPort),
-		cluster.nodeData,
+		cluster.fsm,
 		serializer.NewProtoSerializer(),
 		cluster.logLevel,
 		cluster.logger,
@@ -86,28 +85,28 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, member
 	return cluster
 }
 
-func (n *Cluster) handleMemberEvents(events <-chan membership.Event) {
+func (n *Cluster) handleMemberEvents(events <-chan discovery.Event) {
 	n.logger.Info("begin listening for member changes")
 	for event := range events {
 		if !n.node.IsLeader() {
-			// n.logger.Debugf("skipping event because not leader")
+			n.logger.Debug("skipping event because not leader")
 			continue
 		}
-		n.logger.Debug("received event", "addr", hclog.Fmt("%s:%d", event.Host, event.Port))
-		switch event.Change {
-		case membership.MemberAdded:
+		n.logger.Debugf("received event at addr:[%s:%d]", event.Host, event.Port)
+		switch event.Type {
+		case discovery.MemberAdded:
 			n.logger.Debug("handling MemberAdded, node", event.ID)
 			if err := n.node.AddPeer(event.ID, event.Host, event.Port); err != nil {
-				n.logger.Error(errors.Wrap(err, "failed to add peer").Error())
+				n.logger.Error(errors.Wrap(err, "failed to add peer"))
 			}
 
-		case membership.MemberRemoved:
+		case discovery.MemberRemoved:
 			n.logger.Debug("handling MemberRemoved, node", event.ID)
 			if err := n.node.RemovePeer(event.ID); err != nil {
-				n.logger.Error(errors.Wrap(err, "failed to remove peer").Error())
+				n.logger.Error(errors.Wrap(err, "failed to remove peer"))
 			}
 
-		case membership.MemberPinged:
+		case discovery.MemberPinged:
 			n.logger.Debug("handling MemberPinged, node", event.ID)
 			if err := n.node.AddPeer(event.ID, event.Host, event.Port); err != nil {
 				n.logger.Error("failed to add pinged peer", err.Error())
@@ -123,7 +122,7 @@ func (n *Cluster) Stop(ctx context.Context) {
 	defer n.mtx.Unlock()
 	if n.isStarted {
 		n.logger.Info("Shutting down node")
-		n.membershipProvider.Stop(ctx)
+		n.discoveryProvider.Stop(ctx)
 		n.node.Stop()
 		n.grpcServer.GracefulStop()
 		n.logger.Info("Completed node shutdown")
@@ -146,7 +145,7 @@ func (n *Cluster) Start(ctx context.Context) error {
 	// start the underlying raft node
 
 	// read member events
-	memberEvents, err := n.membershipProvider.Listen(ctx)
+	memberEvents, err := n.discoveryProvider.Listen(ctx)
 	if err != nil {
 		return err
 	}
@@ -166,33 +165,33 @@ func (n *Cluster) Start(ctx context.Context) error {
 	return nil
 }
 
-func (n *Cluster) bootstrap(memberEvents chan membership.Event) {
+func (n *Cluster) bootstrap(memberEvents chan discovery.Event) {
 	n.logger.Debug("begin bootstrap gossip")
 	t := time.Now()
 	for {
 		select {
 		case m := <-memberEvents:
-			switch m.Change {
-			case membership.MemberAdded, membership.MemberPinged:
+			switch m.Type {
+			case discovery.MemberAdded, discovery.MemberPinged:
 				n.logger.Debug("checking peer", m.ID)
 				addr := fmt.Sprintf("%s:%d", m.Host, m.Port)
 				resp, err := n.callPeerBootstrap(addr)
 				if err != nil {
-					n.logger.Error(fmt.Errorf("failed to call client %s bootstrap, %v", addr).Error())
+					n.logger.Error(fmt.Errorf("failed to call client %s bootstrap", addr))
 				} else {
 					// if peer is in cluster or has a higher ID, wait more time
 					if resp.GetInCluster() {
 						n.logger.Debug("found another active cluster")
 						t = time.Now()
 					} else if strings.Compare(resp.GetPeerId(), n.node.ID) > 0 {
-						n.logger.Debug("found another better leader candidate", resp.GetPeerId())
+						n.logger.Debugf("found another better leader candidate: %s", resp.GetPeerId())
 						t = time.Now()
 					} else {
 						n.logger.Debug("this node is a better candidate than", m.ID)
 					}
 				}
 			default:
-				n.logger.Debug("skipping membership event %v", m.Change)
+				n.logger.Debugf("skipping membership event %v", m.Type)
 			}
 
 		case <-time.After(time.Second):
@@ -212,7 +211,7 @@ func (n *Cluster) bootstrap(memberEvents chan membership.Event) {
 			// bootstrap this node as the leader
 			n.logger.Debug("hasn't found another leader peer, bootstrapping")
 			if err := n.node.Bootstrap(); err != nil {
-				n.logger.Error(errors.Wrap(err, "failed to bootstrap node").Error())
+				n.logger.Error(errors.Wrap(err, "failed to bootstrap node"))
 			} else {
 				return
 			}
@@ -268,7 +267,7 @@ func (n *Cluster) leaderRebalance() {
 		for partitionID := uint32(0); partitionID < n.partitionCount; partitionID++ {
 			partition, err := n.getPartition(partitionID)
 			if err != nil {
-				n.logger.Error(errors.Wrapf(err, "failed to get owner, partition=%d, %v", partitionID, err).Error())
+				n.logger.Error(errors.Wrapf(err, "failed to get owner, partition=%d", partitionID))
 			}
 			if partition.GetOwner() != "" && partition.AcceptingMessages {
 				currentPartitions[partitionID] = partition.GetOwner()
@@ -297,7 +296,7 @@ func (n *Cluster) leaderRebalance() {
 				// then, invoke shutdown on owner
 				currentPeer, err := n.node.GetPeer(currentPeerID)
 				if err != nil {
-					n.logger.Error(errors.Wrapf(err, "could not get peer %s, %v", currentPeerID).Error())
+					n.logger.Error(errors.Wrapf(err, "could not get peer %s", currentPeerID))
 					// TODO: make this rollback smarter
 					continue
 				}
@@ -533,7 +532,7 @@ func (n *Cluster) Ping(ctx context.Context, request *partipb.PingRequest) (*part
 
 func raftGetLocally[T any](n *Cluster, group string, key string) (T, error) {
 	var output T
-	value, err := n.nodeData.Get(group, key)
+	value, err := n.fsm.Get(group, key)
 	if err != nil || value == nil {
 		return output, err
 	}

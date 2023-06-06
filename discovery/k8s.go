@@ -1,4 +1,4 @@
-package membership
+package discovery
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/super-flat/parti/logging"
+	"github.com/super-flat/parti/log"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -29,7 +29,7 @@ type k8sPeer struct {
 // Kubernetes implements the membership.Provider interface via direct
 // integration with the kubernetes API
 type Kubernetes struct {
-	logger            logging.Logger
+	logger            log.Logger
 	namespace         string
 	podLabels         map[string]string
 	portName          string
@@ -44,7 +44,7 @@ type Kubernetes struct {
 
 var _ Provider = &Kubernetes{}
 
-func NewKubernetes(namespace string, podLabels map[string]string, portName string, logger logging.Logger) *Kubernetes {
+func NewKubernetes(namespace string, podLabels map[string]string, portName string, logger log.Logger) *Kubernetes {
 	// copy pod labels into new map
 	podLabelsCopy := make(map[string]string, len(podLabels))
 	for k, v := range podLabels {
@@ -131,7 +131,7 @@ func (k *Kubernetes) processEvents(ctx context.Context) {
 			return
 		case evt := <-k.internalCh:
 			k.mtx.Lock()
-			switch evt.Change {
+			switch evt.Type {
 			case MemberAdded, MemberPinged:
 				isActive, exists := k.peerCache[evt.ID]
 
@@ -141,18 +141,18 @@ func (k *Kubernetes) processEvents(ctx context.Context) {
 					k.peerCache[evt.ID] = true
 					// emit an added event
 					k.discoCh <- Event{
-						ID:     evt.ID,
-						Host:   evt.Host,
-						Port:   evt.Port,
-						Change: MemberAdded,
+						ID:   evt.ID,
+						Host: evt.Host,
+						Port: evt.Port,
+						Type: MemberAdded,
 					}
 				} else if isActive {
 					// if it's already active, emit a ping event
 					k.discoCh <- Event{
-						ID:     evt.ID,
-						Host:   evt.Host,
-						Port:   evt.Port,
-						Change: MemberPinged,
+						ID:   evt.ID,
+						Host: evt.Host,
+						Port: evt.Port,
+						Type: MemberPinged,
 					}
 				}
 
@@ -234,35 +234,35 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 			switch event.Type {
 			case watch.Added:
 				k.internalCh <- Event{
-					ID:     newPeer.ID,
-					Host:   newPeer.Address,
-					Port:   newPeer.Port,
-					Change: MemberAdded,
+					ID:   newPeer.ID,
+					Host: newPeer.Address,
+					Port: newPeer.Port,
+					Type: MemberAdded,
 				}
 
 			case watch.Deleted:
 				k.internalCh <- Event{
-					ID:     newPeer.ID,
-					Host:   newPeer.Address,
-					Port:   newPeer.Port,
-					Change: MemberRemoved,
+					ID:   newPeer.ID,
+					Host: newPeer.Address,
+					Port: newPeer.Port,
+					Type: MemberRemoved,
 				}
 
 			case watch.Modified:
 				switch pod.Status.Phase {
 				case v1.PodRunning:
 					k.internalCh <- Event{
-						ID:     newPeer.ID,
-						Host:   newPeer.Address,
-						Port:   newPeer.Port,
-						Change: MemberPinged,
+						ID:   newPeer.ID,
+						Host: newPeer.Address,
+						Port: newPeer.Port,
+						Type: MemberPinged,
 					}
 				case v1.PodSucceeded, v1.PodFailed:
 					k.internalCh <- Event{
-						ID:     newPeer.ID,
-						Host:   newPeer.Address,
-						Port:   newPeer.Port,
-						Change: MemberRemoved,
+						ID:   newPeer.ID,
+						Host: newPeer.Address,
+						Port: newPeer.Port,
+						Type: MemberRemoved,
 					}
 
 				default:
@@ -326,10 +326,10 @@ func (k *Kubernetes) pollPods(ctx context.Context) {
 				}
 
 				k.internalCh <- Event{
-					ID:     newPeer.ID,
-					Host:   newPeer.Address,
-					Port:   newPeer.Port,
-					Change: MemberPinged,
+					ID:   newPeer.ID,
+					Host: newPeer.Address,
+					Port: newPeer.Port,
+					Type: MemberPinged,
 				}
 			}
 		}
