@@ -1,16 +1,17 @@
 package fsm
 
 import (
-	"errors"
 	"io"
 	"log"
 	"sync"
 
 	hraft "github.com/hashicorp/raft"
+	"github.com/pkg/errors"
 	"github.com/super-flat/parti/internal/raft/serializer"
 	partipb "github.com/super-flat/parti/pb/parti/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type ProtoFsm struct {
@@ -110,14 +111,61 @@ func (p *ProtoFsm) applyProtoCommand(cmd proto.Message) (proto.Message, error) {
 // be called concurrently with FSMSnapshot.Persist. This means the FSM should
 // be implemented to allow for concurrent updates while a snapshot is happening.
 func (p *ProtoFsm) Snapshot() (hraft.FSMSnapshot, error) {
-	return nil, errors.New("not implemented")
+	// acquire the lock
+	p.mtx.Lock()
+	state := p.data
+	p.mtx.Unlock()
+	// create an instance of FsmGroups
+	fsmGroups := &partipb.FsmGroups{
+		Groups: make(map[string]*partipb.FsmGroup),
+	}
+	// iterate the state data and build the FsmGroups
+	for group, kv := range state {
+		// create a data to hold the key/value pair record
+		data := make(map[string]*anypb.Any)
+		for k, v := range kv {
+			// no need to handle the error because v is valid proto message
+			record, _ := anypb.New(v)
+			// set the appropriate data key/value pair
+			data[k] = record
+		}
+		// add to the fsmGroups
+		fsmGroups.Groups[group] = &partipb.FsmGroup{Data: data}
+	}
+	// let us snapshot the data
+	return &snapshot{groups: fsmGroups}, nil
 }
 
 // Restore is used to restore an FSM from a snapshot. It is not called
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
-func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error { // nolint
-	return errors.New("not implemented")
+func (p *ProtoFsm) Restore(snapshot io.ReadCloser) error {
+	// let us read the snapshot data
+	bytea, err := io.ReadAll(snapshot)
+	// handle the error
+	if err != nil {
+		return err
+	}
+	// let us unpack the byte array
+	fmsGroups := new(partipb.FsmGroups)
+	if err := proto.Unmarshal(bytea, fmsGroups); err != nil {
+		return errors.Wrap(err, "failed to unmarshal the FSM snapshot")
+	}
+
+	// acquire the lock because we are building the fsm state
+	p.mtx.Lock()
+	// release the lock once we are done building the FSM state
+	defer p.mtx.Unlock()
+	// iterate the fmsGroups records and build the FSM state
+	for group, fsmGroup := range fmsGroups.GetGroups() {
+		data := make(map[string]proto.Message)
+		for k, v := range fsmGroup.GetData() {
+			message, _ := v.UnmarshalNew()
+			data[k] = message
+		}
+		p.data[group] = data
+	}
+	return snapshot.Close()
 }
 
 // Get retrieves a value from the fsm storage

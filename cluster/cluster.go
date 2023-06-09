@@ -57,7 +57,7 @@ func NewCluster(ctx context.Context, raftPort uint16, msgHandler Handler, member
 		opt.Apply(cluster)
 	}
 
-	// retrieve the node ID from the membership implementation
+	// retrieve the node ID from the discovery provider
 	nodeID, err := cluster.discoveryProvider.GetNodeID(ctx)
 	if err != nil {
 		panic(err)

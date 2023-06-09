@@ -80,7 +80,7 @@ func (k *Kubernetes) Listen(ctx context.Context) (chan Event, error) {
 	if k.isStarted {
 		return nil, errors.New("already started")
 	}
-	k.logger.Info("starting k8s membership")
+	k.logger.Info("starting k8s discovery provider")
 
 	// make the context cancelable
 	runningContext, cancelContext := context.WithCancel(ctx)
@@ -111,7 +111,7 @@ func (k *Kubernetes) Stop(ctx context.Context) { // nolint
 	k.mtx.Lock()
 	defer k.mtx.Unlock()
 	if k.isStarted {
-		k.logger.Info("stopping k8s membership")
+		k.logger.Info("stopping k8s discovery provider")
 		k.isStarted = false
 		for _, callback := range k.shutdownCallbacks {
 			callback()
@@ -193,7 +193,6 @@ func (k *Kubernetes) listenChanges(ctx context.Context) {
 		case event := <-watcher.ResultChan():
 			pod, ok := event.Object.(*v1.Pod)
 			if !ok {
-				k.logger.Error("unexpected type")
 				continue
 			}
 			k.logger.Debug(fmt.Sprintf("received watch event %s for pod %s", event.Type, pod.Name))
