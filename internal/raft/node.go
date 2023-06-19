@@ -206,9 +206,9 @@ func (n *Node) Stop() {
 	defer n.mtx.Unlock()
 	if n.isStarted {
 		// snapshot state
-		// if err := n.Raft.Snapshot().Error(); err != nil {
-		// 	n.log.Println("Failed to create snapshot!")
-		// }
+		if err := n.Raft.Snapshot().Error(); err != nil {
+			n.logger.Error(errors.Wrap(err, "failed to create snapshot"))
+		}
 		// shut down raft
 		if err := n.Raft.Shutdown().Error(); err != nil {
 			n.logger.Error(errors.Wrapf(err, "failed to shutdown raft").Error())
