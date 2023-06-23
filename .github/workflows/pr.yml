@@ -15,7 +15,7 @@ jobs:
           submodules: true
       - uses: earthly/actions/setup-earthly@v1
         with:
-          version: v0.7.1
+          version: v0.7.9
       - name: Earthly version
         run: earthly --version
       - name: Linter
