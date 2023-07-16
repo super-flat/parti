@@ -3,3 +3,4 @@ vendor/
 .db/
 .idea/
 .tmp/
+.DS_Store
