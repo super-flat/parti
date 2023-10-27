@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/Jille/raft-grpc-transport v1.4.0
+	github.com/caarlos0/env/v10 v10.0.0
 	github.com/caarlos0/env/v6 v6.10.1
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-hclog v1.5.0
