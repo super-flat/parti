@@ -3,21 +3,21 @@ module github.com/super-flat/parti
 go 1.20
 
 require (
-	github.com/Jille/raft-grpc-transport v1.4.0
+	github.com/Jille/raft-grpc-transport v1.6.1
 	github.com/caarlos0/env/v6 v6.10.1
-	github.com/google/uuid v1.3.0
-	github.com/hashicorp/go-hclog v1.5.0
-	github.com/hashicorp/raft v1.5.0
+	github.com/google/uuid v1.6.0
+	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/raft v1.7.3
 	github.com/joho/godotenv v1.5.1
 	github.com/pkg/errors v0.9.1
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.10.2
 	go.uber.org/multierr v1.11.0
-	go.uber.org/zap v1.24.0
+	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.56.2
 	google.golang.org/protobuf v1.31.0
-	k8s.io/api v0.28.0-alpha.4
-	k8s.io/apimachinery v0.28.0-alpha.4
-	k8s.io/client-go v0.28.0-alpha.4
+	k8s.io/api v0.37.0
+	k8s.io/apimachinery v0.37.0
+	k8s.io/client-go v0.37.0
 )
 
 require (
